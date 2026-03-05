@@ -1,0 +1,13 @@
+*.retry
+*.log
+.ansible/
+
+
+*.pem
+*.key
+*.gpg
+secrets.yml
+
+
+.DS_Store
+*~
