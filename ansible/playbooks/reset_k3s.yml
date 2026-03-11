@@ -1,0 +1,50 @@
+- name: Undo cluster setup
+  hosts: k3s_cluster
+  become: true
+  tasks:
+    - name: Run K3s Uninstall script
+      when: "'k3s_cluster' in group_names"
+      ansible.builtin.command:
+        cmd: /usr/local/bin/k3s-uninstall.sh
+        removes: /var/lib/rancher/k3s/*
+      failed_when: false
+
+    - name: Force Unmount K3s/Kubelet paths
+      ansible.builtin.shell: |
+        for mount in $(mount | grep -E 'k3s|kubelet' | awk '{ print $3 }'); do
+          umount -l $mount
+        done
+      failed_when: false
+
+    - name: Flush All Networking Rules
+      ansible.builtin.shell: |
+        iptables -F
+        iptables -t nat -F
+        iptables -t mangle -F
+        iptables -X
+        ipvsadm -C
+        ip link delete cni0 || true
+        ip link delete flannel.1 || true
+      failed_when: false
+
+    - name: Clear All Data and Config Directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/lib/rancher
+        - /etc/rancher
+        - /var/lib/kubelet
+        - /var/run/k3s
+        - "/home/{{ ansible_user }}/.kube"
+        - /usr/local/bin/k3s-install.sh
+        - "{{ k3s_server_location | default('/var/lib/rancher/k3s') }}"
+        
+- name: Undo user setup
+  hosts: server
+  tasks:
+    - name: Remove K3s commands from ~/.bashrc
+      ansible.builtin.lineinfile:
+        path: "~{{ ansible_user }}/.bashrc"
+        search_string: "Added by k3s-ansible"
+        state: absent
