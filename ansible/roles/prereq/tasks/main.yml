@@ -1,0 +1,147 @@
+#SPDX-License-Identifier: MIT-0
+---
+- name: Enforce minimum Ansible version
+  ansible.builtin.assert:
+    that:
+      - ansible_version.full is version('2.15', '>=')
+    msg: "Minimum ansible-core version required is 2.15"
+
+- name: Install Dependent Ubuntu Packages
+  when: ansible_facts['distribution'] in ['Ubuntu']
+  ansible.builtin.apt:
+    name: policycoreutils  # Used by install script to restore SELinux context
+    update_cache: "{{ airgap_dir is not defined }}"
+
+- name: Enable IPv4 forwarding
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: "1"
+    state: present
+    reload: true
+
+- name: Populate service facts
+  ansible.builtin.service_facts:
+
+- name: Allow UFW Exceptions
+  when:
+    - ansible_facts.services['ufw'] is defined
+    - ansible_facts.services['ufw'].state == 'running'
+  block:
+    - name: Get ufw status
+      ansible.builtin.command:
+        cmd: ufw status
+      changed_when: false
+      register: prereq_ufw_status
+
+    - name: If ufw enabled, open api port
+      when:
+        - "'Status: active' in prereq_ufw_status['stdout']"
+      community.general.ufw:
+        rule: allow
+        port: "{{ api_port }}"
+        proto: tcp
+
+    - name: If ufw enabled, open etcd ports
+      when:
+        - "'Status: active' in prereq_ufw_status['stdout']"
+        - groups[server_group] | length > 1
+      community.general.ufw:
+        rule: allow
+        port: "2379:2381"
+        proto: tcp
+
+    - name: If ufw enabled, open inter-node ports
+      when:
+        - "'Status: active' in prereq_ufw_status['stdout']"
+      community.general.ufw:
+        rule: allow
+        port: "{{ item.port }}"
+        proto: "{{ item.proto }}"
+      loop:
+        - { port: "5001", proto: "tcp" }    # Spegel (Embedded distributed registry)
+        - { port: "8472", proto: "udp" }    # Flannel VXLAN
+        - { port: "10250", proto: "tcp" }   # Kubelet metrics
+        - { port: "51820", proto: "udp" }   # Flannel Wireguard (IPv4)
+        - { port: "51821", proto: "udp" }   # Flannel Wireguard (IPv6)
+
+    - name: If ufw enabled, allow default CIDRs
+      when:
+        - "'Status: active' in prereq_ufw_status['stdout']"
+      community.general.ufw:
+        rule: allow
+        src: '{{ item }}'
+      loop: "{{ (cluster_cidr + ',' + service_cidr) | split(',') }}"
+
+- name: Check for Apparmor existence
+  ansible.builtin.stat:
+    path: /sys/module/apparmor/parameters/enabled
+  register: prereq_apparmor_enabled
+
+- name: Check if Apparmor is enabled
+  when: prereq_apparmor_enabled.stat.exists
+  ansible.builtin.command: cat /sys/module/apparmor/parameters/enabled
+  register: prereq_apparmor_status
+  changed_when: false
+
+- name: Gather the package facts
+  ansible.builtin.package_facts:
+    manager: auto
+
+# Iptables v1.8.0-1.8.4 have a specific bug with K3s. https://github.com/k3s-io/k3s/issues/3117
+- name: If iptables v1.8.0-1.8.4, warn user  # noqa ignore-errors
+  when:
+    - ansible_facts.packages['iptables'] is defined
+    - ansible_facts.packages['iptables'][0]['version'] is version('1.8.5', '<')
+    - ansible_facts.packages['iptables'][0]['version'] is version('1.7.9', '>')
+  ansible.builtin.fail:
+    msg:
+      - "Warning: Iptables {{ ansible_facts.packages['iptables'][0]['version'] }} found."
+      - "Add '--prefer-bundled-bin' to extra_server_args variable to use the bundled iptables binary."
+  ignore_errors: true
+
+- name: Setup alternative K3s directory
+  when:
+    - k3s_server_location is defined
+    - k3s_server_location != "/var/lib/rancher/k3s"
+  block:
+    - name: Make rancher directory
+      ansible.builtin.file:
+        path: "/var/lib/rancher"
+        mode: "0755"
+        state: directory
+    - name: Create symlink
+      ansible.builtin.file:
+        dest: /var/lib/rancher/k3s
+        src: "{{ k3s_server_location }}"
+        force: true
+        state: link
+
+- name: Setup extra manifests
+  when: extra_manifests is defined
+  block:
+    - name: Make manifests directory
+      ansible.builtin.file:
+        path: "/var/lib/rancher/k3s/server/manifests"
+        mode: "0700"
+        state: directory
+    - name: Copy manifests
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "/var/lib/rancher/k3s/server/manifests"
+        mode: "0600"
+      loop: "{{ extra_manifests }}"
+
+- name: Setup optional private registry configuration
+  when: registries_config_yaml is defined
+  block:
+    - name: Make k3s config directory
+      ansible.builtin.file:
+        path: "/etc/rancher/k3s"
+        mode: "0755"
+        state: directory
+    - name: Copy config values
+      ansible.builtin.copy:
+        content: "{{ registries_config_yaml }}"
+        dest: "/etc/rancher/k3s/registries.yaml"
+        mode: "0644"
+# tasks file for roles/prereq
