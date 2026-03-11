@@ -55,6 +55,13 @@
       ansible.builtin.set_fact:
         k3s_server_config: "{{ k3s_server_config | combine(server_config_yaml | from_yaml) }}"
 
+- name: Download K3s install script
+  ansible.builtin.get_url:
+    url: https://get.k3s.io
+    dest: /usr/local/bin/k3s-install.sh
+    mode: '0755'
+    force: false
+
 # We always run the install script, but we skip the download step as needed
 - name: Run K3s install script
   when: not ansible_check_mode
