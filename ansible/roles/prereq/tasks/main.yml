@@ -64,6 +64,25 @@
         - { port: "51820", proto: "udp" }   # Flannel Wireguard (IPv4)
         - { port: "51821", proto: "udp" }   # Flannel Wireguard (IPv6)
 
+    - name: If firewalld enabled, allow node CIDRs
+      ansible.posix.firewalld:
+        source: "{{ item }}"
+        zone: internal
+        state: enabled
+        permanent: true
+        immediate: true
+      loop: >-
+        {{
+          (
+            groups[server_group] | default([])
+            + groups[agent_group] | default([])
+          )
+          | map('extract', hostvars)
+          | selectattr('ansible_facts.default_ipv4', 'defined')
+          | map(attribute='ansible_facts.default_ipv4.address')
+          | flatten | unique | list
+        }}
+
     - name: If ufw enabled, allow default CIDRs
       when:
         - "'Status: active' in prereq_ufw_status['stdout']"

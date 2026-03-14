@@ -1,12 +1,20 @@
+---
 - name: Undo cluster setup
-  hosts: k3s_cluster
+  hosts: all
   become: true
   tasks:
-    - name: Run K3s Uninstall script
+    - name: Run K3s Server Uninstall script
       when: "'k3s_cluster' in group_names"
       ansible.builtin.command:
         cmd: /usr/local/bin/k3s-uninstall.sh
-        removes: /var/lib/rancher/k3s/*
+        removes: /usr/local/bin/k3s-uninstall.sh
+      failed_when: false
+
+    - name: Run K3s Agent Uninstall script
+      when: "'load_generator' in group_names"
+      ansible.builtin.command:
+        cmd: /usr/local/bin/k3s-agent-uninstall.sh
+        removes: /usr/local/bin/k3s-agent-uninstall.sh
       failed_when: false
 
     - name: Force Unmount K3s/Kubelet paths
@@ -27,7 +35,7 @@
         ip link delete flannel.1 || true
       failed_when: false
 
-    - name: Clear All Data and Config Directories
+    - name: Clear All Data, Config and Binary Directories
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
@@ -38,10 +46,14 @@
         - /var/run/k3s
         - "/home/{{ ansible_user }}/.kube"
         - /usr/local/bin/k3s-install.sh
+        - /usr/local/bin/k3s
+        - /usr/local/bin/k3s-agent-uninstall.sh
+        - /etc/systemd/system/k3s.service
+        - /etc/systemd/system/k3s-agent.service
         - "{{ k3s_server_location | default('/var/lib/rancher/k3s') }}"
         
 - name: Undo user setup
-  hosts: k3s_cluster
+  hosts: all
   tasks:
     - name: Remove K3s commands from ~/.bashrc
       ansible.builtin.lineinfile:
