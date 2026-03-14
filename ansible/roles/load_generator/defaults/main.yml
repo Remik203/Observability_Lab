@@ -13,8 +13,8 @@ extra_server_args: "" # noqa var-naming[no-role-prefix]
 extra_install_envs: {} # noqa var-naming[no-role-prefix]
 skip_download: false # noqa var-naming[no-role-prefix]
 k3s_version: "v1.28.2+k3s1" # noqa var-naming[no-role-prefix]
-api_endpoint: "PrimaryVM" # noqa var-naming[no-role-prefix]
+api_endpoint: "SecondaryVM" # noqa var-naming[no-role-prefix]
 extra_service_envs: [] # noqa var-naming[no-role-prefix]
 server_config_yaml: |
   write-kubeconfig-mode: "0644"
-# defaults file for roles/k3s
+# defaults file for roles/k6
