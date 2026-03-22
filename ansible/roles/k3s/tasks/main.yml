@@ -24,12 +24,6 @@
         state: directory
         mode: '0755'
 
-    # If token is provided, add it to the config
-    - name: Add token to server config
-      when: token is defined
-      ansible.builtin.set_fact:
-        k3s_server_config: "{{ k3s_server_config | combine({'token': token}) }}"
-
     - name: Determine if tls-san is already in config or args
       # noqa var-naming[no-role-prefix]
       ansible.builtin.set_fact:
@@ -125,12 +119,6 @@
         mode: "0644"
       register: k3s_server_config_result
 
-    - name: Delete any existing token from the environment if different from the new one
-      ansible.builtin.lineinfile:
-        state: absent
-        path: "{{ k3s_server_env_file }}"
-        regexp: "^K3S_TOKEN=\\s*(?!{{ token | default('') | regex_escape }}\\s*$)"
-
     - name: Reload systemd daemon
       when:
         - not ansible_check_mode
@@ -207,23 +195,6 @@
           register: k3s_server_mv_result
           changed_when:
             - k3s_server_mv_result.rc == 0
-
-    - name: Get the token if randomly generated
-      when: token is not defined
-      block:
-        - name: Wait for token
-          ansible.builtin.wait_for:
-            path: /var/lib/rancher/k3s/server/token
-
-        - name: Read node-token from first server
-          ansible.builtin.slurp:
-            src: /var/lib/rancher/k3s/server/token
-          register: k3s_server_node_token
-
-        - name: Store random token for later servers
-          # noqa var-naming[no-role-prefix]
-          ansible.builtin.set_fact:
-            random_token: "{{ k3s_server_node_token.content | b64decode | regex_replace('\n', '') }}"
 
 - name: Wait for control plane to be ready
   ansible.builtin.wait_for:

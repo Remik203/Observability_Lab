@@ -12,10 +12,3 @@
   become: true
   roles:
     - role: k3s
-
-- name: Setup K3S agent
-  hosts: load_generator
-  gather_facts: false
-  become: true
-  roles:
-    - role: load_generator
