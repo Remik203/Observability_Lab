@@ -6,17 +6,18 @@
   register: kubectl_apply_result
   changed_when: "'created' in kubectl_apply_result.stdout or 'configured' in kubectl_apply_result.stdout"
 
-- name: Move deployment of loadgenerator to agent VM
+- name: Turn off built in loadgenerator
   ansible.builtin.command:
-    cmd: kubectl patch deployment loadgenerator -p '{"spec":{"template":{"spec":{"nodeSelector":{"type":"loadgenerator"}}}}}'
+    cmd: kubectl scale deployment loadgenerator --replicas=0
   changed_when: true
 
-- name: Wait until all pods are ready
+- name: Change frontend-external to NodePort (so SecondaryVM with K6 can see it)
+  ansible.builtin.command:
+    cmd: kubectl patch svc frontend-external -p '{"spec": {"type": "NodePort", "ports": [{"port": 80, "targetPort": 8080, "nodePort": 30080}]}}'
+  changed_when: true
+
+- name: Wait until all pods are ready (can take a few minutes)
   ansible.builtin.command:
     cmd: kubectl wait --for=condition=available deployment --all --timeout=300s
-  changed_when: false
-
-- name: Run port forwarding to the frontend service
-  ansible.builtin.shell: "nohup kubectl port-forward service/frontend-external 8080:80 --address 0.0.0.0 > /dev/null 2>&1 &"
   changed_when: false
 # tasks file for roles/google_demo
