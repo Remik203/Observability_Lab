@@ -1,3 +1,65 @@
 #SPDX-License-Identifier: MIT-0
 ---
+- name: Install Go and Git
+  become: true
+  ansible.builtin.apt:
+    name:
+      - golang-go
+      - git
+    state: present
+    update_cache: true
+
+- name: Install xk6 compiler for extensions
+  become: true
+  ansible.builtin.command:
+    cmd: go install go.k6.io/xk6/cmd/xk6@latest
+  environment:
+    GOPATH: /root/go
+  changed_when: true
+
+- name: Compile K6 with extensions (defined in defaults)
+  become: true
+  ansible.builtin.command:
+    cmd: "/root/go/bin/xk6 build {% for ext in k6_extensions %}--with {{ ext }} {% endfor %}"
+    chdir: /opt
+  environment:
+    GOPATH: /root/go
+  changed_when: true
+   
+- name: Move compiled K6 binary to global directory
+  become: true
+  ansible.builtin.command:
+    cmd: mv /opt/k6 /usr/local/bin/k6
+  changed_when: true
+  
+- name: Create .kube directory for the user
+  become: false
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/.kube"
+    state: directory
+    mode: '0755'
+    
+- name: Fetch raw kubeconfig securely from PrimaryVM
+  become: true
+  ansible.builtin.slurp:
+    src: /etc/rancher/k3s/k3s.yaml
+  delegate_to: primary_node
+  register: raw_kubeconfig
+
+- name: Copy kubeconfig to SecondaryVM and inject correct server IP
+  become: false
+  ansible.builtin.copy:
+    content: "{{ raw_kubeconfig['content'] | b64decode | replace('127.0.0.1', hostvars['primary_node']['ansible_host']) }}"
+    dest: "/home/{{ ansible_user }}/.kube/config"
+    mode: '0600'
+
+- name: Verify k6 installation
+  ansible.builtin.command:
+    cmd: k6 version
+  register: k6_version_output
+  changed_when: false
+
+- name: Display installed k6 version
+  ansible.builtin.debug:
+    msg: "Installed successfully: {{ k6_version_output.stdout }}"
 # tasks file for roles/k6
