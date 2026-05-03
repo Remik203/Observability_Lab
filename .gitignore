@@ -1,6 +1,7 @@
 *.retry
 *.log
 .ansible/
+.k6_tests/results/
 *.qcow2
 
 *.pem
