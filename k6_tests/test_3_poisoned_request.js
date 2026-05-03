@@ -9,6 +9,7 @@ export const options = {
     stages: CONFIG.STANDARD_STAGES,
     thresholds: {
         http_req_duration: ['p(95)<500'],
+        http_req_failed: ['rate<=1.0'],
     }
 };
 
@@ -38,7 +39,7 @@ export default function () {
     let cartPayload;
 
     if (isPoisoned) {
-        console.log('Injecting poisoned request: Invalid product ID sent to cart');
+        // console.log('Injecting poisoned request: Invalid product ID sent to cart');
         cartPayload = {
             product_id: 'POISON_ITEM_INVALID_500',
             quantity: 1,
