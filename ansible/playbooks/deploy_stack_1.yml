@@ -1,0 +1,50 @@
+- name: Deploy stack 1 - Standard observability stack (Prometheus + OTel)
+  hosts: k3s_cluster
+  vars:
+    stack_state: present
+  roles:
+    - prometheus_stack
+    - otel_operator
+    - otel_stack
+    - google_demo
+
+- name: Configure local SSH tunnels for dashboard access
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    # Dynamically fetch the IP of the k3s-node from inventory
+    target_ip: "{{ hostvars['primary_node']['ansible_host'] }}"
+  tasks:
+    - name: Establish SSH tunnel for Online Boutique Frontend (Port 30080)
+      ansible.builtin.shell: |
+        if ! pgrep -f "30080:localhost:30080" > /dev/null; then
+          ssh -L 30080:localhost:30080 {{ target_ip }} -N -f
+          echo "Tunnel created"
+        else
+          echo "Tunnel already exists"
+        fi
+      register: frontend_tunnel
+      changed_when: "'created' in frontend_tunnel.stdout"
+
+    - name: Establish SSH tunnel for Grafana Dashboard (Port 30030)
+      ansible.builtin.shell: |
+        if ! pgrep -f "30030:localhost:30030" > /dev/null; then
+          ssh -L 30030:localhost:30030 {{ target_ip }} -N -f
+          echo "Tunnel created"
+        else
+          echo "Tunnel already exists"
+        fi
+      register: grafana_tunnel
+      changed_when: "'created' in grafana_tunnel.stdout"
+
+    - name: Establish SSH tunnel for Prometheus UI (Port 30090)
+      ansible.builtin.shell: |
+        if ! pgrep -f "30090:localhost:30090" > /dev/null; then
+          ssh -L 30090:localhost:30090 {{ target_ip }} -N -f
+          echo "Tunnel created"
+        else
+          echo "Tunnel already exists"
+        fi
+      register: prometheus_tunnel
+      changed_when: "'created' in prometheus_tunnel.stdout"

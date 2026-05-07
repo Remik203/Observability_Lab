@@ -1,0 +1,37 @@
+#SPDX-License-Identifier: MIT-0
+---
+- name: Add Helm repo for OpenTelemetry
+  kubernetes.core.helm_repository:
+    name: open-telemetry
+    repo_url: "https://open-telemetry.github.io/opentelemetry-helm-charts"
+
+- name: Add Jetstack Helm repository for cert-manager
+  kubernetes.core.helm_repository:
+    name: jetstack
+    repo_url: "https://charts.jetstack.io"
+
+- name: Install cert-manager
+  kubernetes.core.helm:
+    name: cert-manager
+    chart_ref: jetstack/cert-manager
+    release_namespace: cert-manager
+    create_namespace: true
+    state: present
+    wait: true
+    values:
+      installCRDs: true
+      
+- name: Install OpeneTelemetry Operator
+  kubernetes.core.helm:
+    name: opentelemetry-operator
+    chart_ref: open-telemetry/opentelemetry-operator
+    release_namespace: opentelemetry-operator-system
+    create_namespace: true
+    state: "{{ stack_state | default('present') }}"
+    wait: true
+    values:
+      admissionWebhooks:
+        autoGenerateCert:
+          enabled: true # Use self-signed certificate
+
+# tasks file for roles/otel_operator
