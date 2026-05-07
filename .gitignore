@@ -4,6 +4,8 @@
 k6_tests/results/
 *.qcow2
 
+./k6_tests/results/
+
 *.pem
 *.key
 *.gpg

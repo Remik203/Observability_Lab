@@ -4,7 +4,7 @@ export const RAMP_UP_SECONDS = 120;
 export const FAILURE_DURATION_SECONDS = 180;
 
 export const CONFIG = {
-    BASE_URL: 'http://150.254.32.183:30080',
+    BASE_URL: `http://${__ENV.TARGET_IP || '127.0.0.1'}:30080`,
     
     // Define load phases manually as needed
     STANDARD_STAGES: [
