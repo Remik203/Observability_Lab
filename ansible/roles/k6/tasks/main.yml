@@ -62,4 +62,43 @@
 - name: Display installed k6 version
   ansible.builtin.debug:
     msg: "Installed successfully: {{ k6_version_output.stdout }}"
+
+- name: Check if Helm is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/helm
+  register: helm_bin
+
+- name: Install Helm
+  when: not helm_bin.stat.exists
+  block:
+    - name: Download helm installer
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        dest: /tmp/get_helm.sh
+        mode: '0700'
+
+    - name: Execute helm installer
+      ansible.builtin.command:
+        cmd: /tmp/get_helm.sh
+      changed_when: true
+
+    - name: Clean up helm installer script
+      ansible.builtin.file:
+        path: /tmp/get_helm.sh
+        state: absent
+
+- name: Ensure python3-pip is installed
+  become: true
+  ansible.builtin.apt:
+    name: python3-pip
+    state: present
+    update_cache: true
+
+- name: Install Python dependencies for Ansible Helm module via APT
+  become: true
+  ansible.builtin.apt:
+    name:
+      - python3-kubernetes
+      - python3-yaml
+    state: present
 # tasks file for roles/k6

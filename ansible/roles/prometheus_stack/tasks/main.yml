@@ -1,0 +1,35 @@
+#SPDX-License-Identifier: MIT-0
+---
+- name: Add Helm rep for Prometheus Community
+  kubernetes.core.helm_repository:
+    name: prometheus-community
+    repo_url: "https://prometheus-community.github.io/helm-charts"
+
+- name: Install Kube-Prometheus-Stack (Prometheus + Grafana)
+  kubernetes.core.helm:
+    name: prometheus-stack
+    chart_ref: prometheus-community/kube-prometheus-stack
+    release_namespace: monitoring
+    create_namespace: true
+    state: "{{ stack_state | default('present') }}"
+    wait: true
+    values:
+      # Grafana Configuration:
+      grafana:
+        enabled: true
+        adminPassword: "admin"
+        service:
+          type: NodePort
+          nodePort: 30030 # Grafana port
+      alertmanager:
+        enabled: false
+      prometheus:
+        service:
+          type: NodePort
+          nodePort: 30090
+        prometheusSpec:
+          enableRemoteWriteReceiver: true
+          retention: 1d # Data retention for one day
+          storageSpec:
+            disableMountSubPath: true
+# tasks file for roles/prometheus_stack

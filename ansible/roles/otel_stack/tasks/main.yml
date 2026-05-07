@@ -1,0 +1,104 @@
+#SPDX-License-Identifier: MIT-0
+---
+- name: Ensure observability namespace exists
+  kubernetes.core.k8s:
+    name: observability
+    api_version: v1
+    kind: Namespace
+    state: present
+
+- name: RBAC and ServiceAccount for OTel
+  kubernetes.core.k8s:
+    definition:
+      - apiVersion: v1
+        kind: ServiceAccount
+        metadata:
+          name: otel-collector
+          namespace: observability
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        metadata:
+          name: otel-collector-role
+        rules:
+          - apiGroups: [""]
+            resources: ["pods", "namespaces", "nodes"]
+            verbs: ["get", "list", "watch"]
+          - apiGroups: ["apps"]
+            resources: ["replicasets"]
+            verbs: ["get", "list", "watch"]
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: otel-collector-binding
+        subjects:
+          - kind: ServiceAccount
+            name: otel-collector
+            namespace: observability
+        roleRef:
+          kind: ClusterRole
+          name: otel-collector-role
+          apiGroup: rbac.authorization.k8s.io
+
+- name: Deploy OTel Collector
+  kubernetes.core.k8s:
+    state: "{{ stack_state | default('present') }}"
+    definition:
+      apiVersion: opentelemetry.io/v1beta1
+      kind: OpenTelemetryCollector
+      metadata:
+        name: otel-gateway
+        namespace: observability
+      spec:
+        mode: deployment
+        image: otel/opentelemetry-collector-contrib:0.100.0
+        serviceAccount: otel-collector
+        config:
+          receivers:
+            otlp:
+              protocols:
+                grpc:
+                  endpoint: "0.0.0.0:4317"
+                http:
+                  endpoint: "0.0.0.0:4318"
+          processors:
+            batch: {}
+            memory_limiter:
+              check_interval: 5s
+              limit_percentage: 80
+              spike_limit_percentage: 25
+            k8sattributes:
+              auth_type: "serviceAccount"
+          exporters:
+            debug:
+              verbosity: basic
+            prometheusremotewrite:
+              endpoint: "http://prometheus-stack-kube-prom-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+              resource_to_telemetry_conversion:
+                enabled: true
+          service:
+            pipelines:
+              metrics:
+                receivers: [otlp]
+                processors: [memory_limiter, k8sattributes, batch]
+                exporters: [prometheusremotewrite]
+              traces:
+                receivers: [otlp]
+                processors: [memory_limiter, k8sattributes, batch]
+                exporters: [debug]
+
+- name: Configure Auto-instrumentation
+  kubernetes.core.k8s:
+    state: "{{ stack_state | default('present') }}"
+    definition:
+      apiVersion: opentelemetry.io/v1alpha1
+      kind: Instrumentation
+      metadata:
+        name: my-instrumentation
+        namespace: default
+      spec:
+        exporter:
+          endpoint: "http://otel-gateway-collector:4318"
+        propagators: [tracecontext, baggage]
+        sampler:
+          type: parentbased_traceidratio
+          argument: "1"
