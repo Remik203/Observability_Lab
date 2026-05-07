@@ -30,6 +30,4 @@
         prometheusSpec:
           enableRemoteWriteReceiver: true
           retention: 1d # Data retention for one day
-          storageSpec:
-            disableMountSubPath: true
 # tasks file for roles/prometheus_stack

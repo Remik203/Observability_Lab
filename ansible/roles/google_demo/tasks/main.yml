@@ -18,6 +18,24 @@
       '{"spec": {"type": "NodePort", "ports": [{"port": 80, "targetPort": 8080, "nodePort": 30080}]}}'
   changed_when: true
 
+- name: Patch all microservices with generous limits and relaxed probes to survive OTel injection
+  ansible.builtin.command:
+    cmd: >
+      kubectl patch deployment {{ item }} -p
+      '{"spec": {"template": {"spec": {"containers": [{"name": "server", "resources": {"limits": {"memory": "1Gi"}, "requests": {"memory": "64Mi"}}, "readinessProbe": {"initialDelaySeconds": 45}, "livenessProbe": {"initialDelaySeconds": 45}}]}}}}'
+  loop:
+    - adservice
+    - cartservice
+    - checkoutservice
+    - currencyservice
+    - emailservice
+    - frontend
+    - paymentservice
+    - productcatalogservice
+    - recommendationservice
+    - shippingservice
+  changed_when: true
+
 - name: Patch VM/Runtime-based deployments with OpenTelemetry auto-instrumentation annotations
   ansible.builtin.command:
     cmd: >

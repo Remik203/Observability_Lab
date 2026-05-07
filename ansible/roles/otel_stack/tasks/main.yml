@@ -52,6 +52,12 @@
         mode: deployment
         image: otel/opentelemetry-collector-contrib:0.100.0
         serviceAccount: otel-collector
+        resources:
+          limits:
+            memory: 512Mi
+          requests:
+            memory: 128Mi
+            cpu: 100m
         config:
           receivers:
             otlp:
@@ -76,6 +82,9 @@
               resource_to_telemetry_conversion:
                 enabled: true
           service:
+            telemetry:
+              metrics:
+                address: "0.0.0.0:8889"
             pipelines:
               metrics:
                 receivers: [otlp]
