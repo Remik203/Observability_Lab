@@ -6,6 +6,8 @@
     - prometheus_stack
     - otel_operator
     - otel_stack
+    - istio
+    - jaeger_v2
     - google_demo
 
 - name: Configure local SSH tunnels for dashboard access
@@ -48,3 +50,14 @@
         fi
       register: prometheus_tunnel
       changed_when: "'created' in prometheus_tunnel.stdout"
+      
+    - name: Establish SSH tunnel for Jaeger UI (Port 16686)
+      ansible.builtin.shell: |
+        if ! pgrep -f "16686:localhost:16686" > /dev/null; then
+          ssh -L 16686:localhost:16686 {{ target_ip }} -N -f
+          echo "Tunnel created"
+        else
+          echo "Tunnel already exists"
+        fi
+      register: jaeger_tunnel
+      changed_when: "'created' in jaeger_tunnel.stdout"
