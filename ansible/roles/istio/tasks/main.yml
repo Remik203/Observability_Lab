@@ -1,0 +1,60 @@
+#SPDX-License-Identifier: MIT-0
+---
+- name: Add Helm rep for Istio
+  kubernetes.core.helm_repository:
+    name: istio
+    repo_url: "https://istio-release.storage.googleapis.com/charts"
+
+- name: Install Istio base
+  kubernetes.core.helm:
+    name: istio-base
+    chart_ref: istio/base
+    release_namespace: istio-system
+    create_namespace: true
+    state: "{{ stack_state | default('present') }}"
+    wait: true
+
+- name: Install Istio discovery (Control Plane) with OTel Tracing enabled
+  kubernetes.core.helm:
+    name: istiod
+    chart_ref: istio/istiod
+    release_namespace: istio-system
+    create_namespace: true
+    state: "{{ stack_state | default('present') }}"
+    wait: true
+    values:
+      meshConfig:
+        extensionProviders:
+          - name: "otel"
+            opentelemetry:
+              service: "otel-gateway-collector.observability.svc.cluster.local"
+              port: 4317
+        defaultProviders:
+          tracing:
+            - "otel"
+        defaultConfig:
+          tracing:
+            sampling: 100.0
+
+- name: Install Istio ingress (Data Plane)
+  kubernetes.core.helm:
+    name: istio-ingress
+    chart_ref: istio/gateway
+    release_namespace: istio-ingress
+    create_namespace: true
+    state: "{{ stack_state | default('present') }}"
+    wait: true
+    values:
+      service:
+        type: NodePort
+
+- name: Enable Istio sidecar auto-injection for the default namespace
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: default
+        labels:
+          istio-injection: enabled

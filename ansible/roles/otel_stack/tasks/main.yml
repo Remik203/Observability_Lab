@@ -81,6 +81,10 @@
               endpoint: "http://prometheus-stack-kube-prom-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
               resource_to_telemetry_conversion:
                 enabled: true
+            otlp/jaeger:
+              endpoint: "jaeger.observability.svc.cluster.local:4317"
+              tls:
+                insecure: true
           service:
             telemetry:
               metrics:
@@ -93,7 +97,7 @@
               traces:
                 receivers: [otlp]
                 processors: [memory_limiter, k8sattributes, batch]
-                exporters: [debug]
+                exporters: [otlp/jaeger]
 
 - name: Configure Auto-instrumentation
   kubernetes.core.k8s:
