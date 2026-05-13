@@ -4,22 +4,3 @@
   become: true
   roles:
     - role: google_demo
-
-- name: Configure local SSH tunnels for dashboard access
-  hosts: localhost
-  connection: local
-  gather_facts: false
-  vars:
-    # Dynamically fetch the IP of the k3s-node from inventory
-    target_ip: "{{ hostvars['primary_node']['ansible_host'] }}"
-  tasks:
-    - name: Establish SSH tunnel for Online Boutique Frontend (Port 30080)
-      ansible.builtin.shell: |
-        if ! pgrep -f "30080:localhost:30080" > /dev/null; then
-          ssh -L 30080:localhost:30080 {{ target_ip }} -N -f
-          echo "Tunnel created"
-        else
-          echo "Tunnel already exists"
-        fi
-      register: frontend_tunnel
-      changed_when: "'created' in frontend_tunnel.stdout"
