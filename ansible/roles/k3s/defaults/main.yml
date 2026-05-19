@@ -1,5 +1,7 @@
 #SPDX-License-Identifier: MIT-0
 ---
+cni_plugin: "flannel"
+
 k3s_server_location: "/var/lib/rancher/k3s"
 systemd_dir: "/etc/systemd/system"  # noqa var-naming[no-role-prefix]
 api_port: 6443  # noqa var-naming[no-role-prefix]
@@ -17,4 +19,8 @@ api_endpoint: "PrimaryVM" # noqa var-naming[no-role-prefix]
 extra_service_envs: [] # noqa var-naming[no-role-prefix]
 server_config_yaml: |
   write-kubeconfig-mode: "0644"
+  {% if cni_plugin == 'cilium' %}
+  flannel-backend: "none"
+  disable-network-policy: true
+  {% endif %}
 # defaults file for roles/k3s

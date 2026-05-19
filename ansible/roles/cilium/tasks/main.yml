@@ -1,0 +1,53 @@
+#SPDX-License-Identifier: MIT-0
+---
+- name: Add Helm repo for Cilium
+  kubernetes.core.helm_repository:
+    name: cilium
+    repo_url: "https://helm.cilium.io/"
+
+- name: Pre-install Prometheus ServiceMonitor CRD
+  ansible.builtin.command:
+    cmd: kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
+  changed_when: true
+
+- name: Install Cilium with eBPF and Hubble
+  kubernetes.core.helm:
+    name: cilium
+    chart_ref: cilium/cilium
+    release_namespace: kube-system
+    state: "{{ stack_state | default('present') }}"
+    chart_version: "1.19.3"
+    wait: true
+    values:
+      operator:
+        replicas: 1
+      hubble:
+        enabled: true
+        listenAddress: ":4244"
+        tls:
+          enabled: false
+        metrics:
+          enabled:
+            - dns
+            - drop
+            - tcp
+            - flow
+            - port-distribution
+            - icmp
+            - http
+        relay:
+          enabled: true
+          tls:
+            server:
+              enabled: false
+        ui:
+          enabled: true
+          service:
+            type: NodePort
+            nodePort: 30087
+      prometheus:
+        enabled: true
+        serviceMonitor:
+          enabled: true
+    
+# tasks file for roles/cilium

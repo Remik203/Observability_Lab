@@ -63,6 +63,7 @@
         - { port: "10250", proto: "tcp" }   # Kubelet metrics
         - { port: "51820", proto: "udp" }   # Flannel Wireguard (IPv4)
         - { port: "51821", proto: "udp" }   # Flannel Wireguard (IPv6)
+        - { port: "4244", proto: "tcp" }    # Hubble Listen Port (Cilium eBPF)
 
     - name: If firewalld enabled, allow node CIDRs
       ansible.posix.firewalld:

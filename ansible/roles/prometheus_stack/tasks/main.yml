@@ -23,6 +23,11 @@
           nodePort: 30030 # Grafana port
       alertmanager:
         enabled: false
+      prometheusOperator:
+        admissionWebhooks:
+          enabled: false
+        tls:
+          enabled: false
       prometheus:
         service:
           type: NodePort
