@@ -13,7 +13,6 @@
 
 - name: Construct K3s server config
   block:
-    # Start with an empty config
     - name: Set empty server config
       ansible.builtin.set_fact:
         k3s_server_config: {}
@@ -25,7 +24,6 @@
         mode: '0755'
 
     - name: Determine if tls-san is already in config or args
-      # noqa var-naming[no-role-prefix]
       ansible.builtin.set_fact:
         _api_endpoint_in_config: >-
           {% if server_config_yaml is defined and api_endpoint is defined and server_config_yaml | regex_search('tls-san:.*' + api_endpoint | regex_escape(), ignorecase=True) %}
@@ -62,11 +60,8 @@
     mode: '0755'
     force: false
 
-# We always run the install script, but we skip the download step as needed
 - name: Run K3s install script
   when: not ansible_check_mode
-  # For some reason, ansible-lint thinks using enviroment with command is an error
-  # even though its valid https://ansible.readthedocs.io/projects/lint/rules/inline-env-var/#correct-code
   ansible.builtin.command: # noqa inline-env-var
     cmd: /usr/local/bin/k3s-install.sh
   # Ensures that extra_install_envs are combined with required env vars
@@ -129,7 +124,7 @@
     - name: Enable and start K3s service
       ansible.builtin.service:
         name: k3s
-        state: restarted
+        state: "{{ k3s_server_config_result.changed | ternary('restarted', 'started') }}"
         enabled: true
 
     - name: Check whether kubectl is installed on control node
@@ -198,9 +193,9 @@
 
 - name: Wait for control plane to be ready
   ansible.builtin.wait_for:
-    host: "{{ api_endpoint }}"
+    host: "127.0.0.1}"
     port: "{{ api_port }}"
-    timeout: 60
+    timeout: 180
   run_once: true
   changed_when: false
 

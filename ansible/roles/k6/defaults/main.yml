@@ -1,7 +1,7 @@
 #SPDX-License-Identifier: MIT-0
 ---
 k6_extensions:
-  - github.com/grafana/xk6-faker
-  - github.com/grafana/xk6-kubernetes
+  - github.com/grafana/xk6-faker@v0.4.0
+#  - github.com/grafana/xk6-kubernetes@v0.3.0
   - github.com/grafana/xk6-disruptor
 # defaults file for roles/k6

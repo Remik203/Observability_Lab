@@ -5,11 +5,18 @@
     name: cilium
     repo_url: "https://helm.cilium.io/"
 
+- name: Download Prometheus ServiceMonitor CRD safely
+  ansible.builtin.get_url:
+    url: "https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml"
+    dest: "/tmp/prometheus_servicemonitor_crd.yaml"
+    mode: '0644'
+
 - name: Pre-install Prometheus ServiceMonitor CRD
   ansible.builtin.command:
-    cmd: kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
-  changed_when: true
-
+    cmd: kubectl apply -f /tmp/prometheus_servicemonitor_crd.yaml
+  register: crd_install_result
+  changed_when: "'created' in crd_install_result.stdout or 'configured' in crd_install_result.stdout"
+  
 - name: Install Cilium with eBPF and Hubble
   kubernetes.core.helm:
     name: cilium
@@ -17,8 +24,15 @@
     release_namespace: kube-system
     state: "{{ stack_state | default('present') }}"
     chart_version: "1.19.3"
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
     wait: true
     values:
+      cni:
+        chainingMode: flannel
+      k8sServiceHost: "{{ hostvars[groups['k3s_cluster'][0]]['ansible_facts']['default_ipv4']['address'] }}"
+      k8sServicePort: 6443
+      kubeProxyReplacement: false
+      devices: "{{ ansible_facts['default_ipv4']['interface'] }}"
       operator:
         replicas: 1
       hubble:
@@ -49,5 +63,9 @@
         enabled: true
         serviceMonitor:
           enabled: true
+  register: helm_install
+  until: helm_install is not failed
+  retries: 5
+  delay: 10
     
 # tasks file for roles/cilium

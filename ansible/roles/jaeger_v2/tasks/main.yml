@@ -7,6 +7,7 @@
 
 - name: Install Jaeger (All-in-One, In-Memory)
   kubernetes.core.helm:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
     name: jaeger
     chart_ref: jaegertracing/jaeger
     release_namespace: observability
@@ -31,6 +32,7 @@
 
 - name: Create dedicated NodePort Service for Jaeger UI
   kubernetes.core.k8s:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
     state: present
     definition:
       apiVersion: v1

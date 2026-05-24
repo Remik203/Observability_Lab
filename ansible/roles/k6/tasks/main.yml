@@ -20,10 +20,13 @@
 - name: Compile K6 with extensions (defined in defaults)
   become: true
   ansible.builtin.command:
-    cmd: "/root/go/bin/xk6 build {% for ext in k6_extensions %}--with {{ ext }} {% endfor %}"
+    cmd: "/root/go/bin/xk6 build v0.50.0 -v {% for ext in k6_extensions %}--with {{ ext }} {% endfor %}"
     chdir: /opt
   environment:
+    GOMAXPROCS: "1"
+    GOGC: "50"
     GOPATH: /root/go
+    GOPROXY: "https://proxy.golang.org,direct"
   changed_when: true
    
 - name: Move compiled K6 binary to global directory
