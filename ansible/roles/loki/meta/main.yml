@@ -1,0 +1,16 @@
+#SPDX-License-Identifier: MIT-0
+---
+galaxy_info:
+  role_name: loki
+  description: "Installs Grafana Loki (SingleBinary mode) as a log aggregation backend for the Observability Lab"
+  license: MIT-0
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - all
+
+# Loki musi być wdrożony po prometheus_stack (wspólny namespace monitoring,
+# Grafana musi już istnieć aby ConfigMap z datasource był wykryty przez sidecar).
+dependencies:
+  - role: prometheus_stack

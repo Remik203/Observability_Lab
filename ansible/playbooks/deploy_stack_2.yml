@@ -1,4 +1,4 @@
-- name: Deploy stack 2 - Cilium eBPF + OTel Instrumentation
+- name: Deploy stack 2 - Cilium eBPF + DaemonSet Observability (no sidecars)
   hosts: k3s_cluster
   gather_facts: true
   vars:
@@ -6,6 +6,8 @@
   roles:
     - cilium
     - prometheus_stack
+    - loki
+    - fluent_bit
     - otel_operator
     - otel_stack
     - jaeger_v2

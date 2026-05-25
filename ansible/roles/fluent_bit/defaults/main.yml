@@ -1,0 +1,5 @@
+#SPDX-License-Identifier: MIT-0
+---
+fluent_bit_chart_version: "0.48.9"
+fluent_bit_loki_host: "loki.monitoring.svc.cluster.local"
+fluent_bit_loki_port: 3100

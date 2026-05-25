@@ -1,0 +1,11 @@
+#SPDX-License-Identifier: MIT-0
+---
+# defaults file for roles/loki
+
+# Wersja chart – blokuje wersję dla odtwarzalności eksperymentów
+# Sprawdź aktualną wersję: helm search repo grafana/loki
+loki_chart_version: "6.29.0"
+
+# Adres serwisu Loki w klastrze (używany przez inne role, np. fluent_bit, otel_stack)
+loki_service_host: "loki.monitoring.svc.cluster.local"
+loki_service_port: 3100

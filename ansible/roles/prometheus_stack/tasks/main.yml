@@ -22,6 +22,19 @@
         service:
           type: NodePort
           nodePort: 30030 # Grafana port
+        sidecar:
+          datasources:
+            enabled: true
+            searchNamespace: ALL
+        additionalDataSources:
+          - name: Loki
+            type: loki
+            uid: loki
+            url: http://loki.monitoring.svc.cluster.local:3100
+            access: proxy
+            isDefault: false
+            jsonData:
+              maxLines: 1000
       alertmanager:
         enabled: false
       prometheusOperator:

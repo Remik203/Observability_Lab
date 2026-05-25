@@ -1,0 +1,107 @@
+#SPDX-License-Identifier: MIT-0
+---
+- name: Add Helm repo for Grafana (Loki)
+  kubernetes.core.helm_repository:
+    name: grafana
+    repo_url: "https://grafana.github.io/helm-charts"
+
+- name: Install Loki (SingleBinary – lab mode, in-memory storage)
+  kubernetes.core.helm:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    name: loki
+    chart_ref: grafana/loki
+    chart_version: "{{ loki_chart_version }}"
+    release_namespace: monitoring
+    create_namespace: true
+    state: "{{ stack_state | default('present') }}"
+    wait: true
+    timeout: 10m
+    values:
+      deploymentMode: SingleBinary
+
+      loki:
+        auth_enabled: false
+        commonConfig:
+          replication_factor: 1
+        schemaConfig:
+          configs:
+            - from: "2024-01-01"
+              store: tsdb
+              object_store: filesystem
+              schema: v13
+              index:
+                prefix: loki_index_
+                period: 24h
+        storage:
+          type: filesystem
+        limits_config:
+          retention_period: 24h
+          ingestion_rate_mb: 8
+          ingestion_burst_size_mb: 16
+          max_global_streams_per_user: 5000
+
+      singleBinary:
+        replicas: 1
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "128Mi"
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+        persistence:
+          enable: false
+        extraVolumeMounts:
+          - name: loki-lab-data
+            mountPath: /var/loki
+        extraVolumes:
+          - name: loki-lab-data
+            emptyDir: {}
+
+      # Wyłączamy komponenty trybu rozdzielonego (distributed)
+      read:
+        replicas: 0
+      write:
+        replicas: 0
+      backend:
+        replicas: 0
+
+      # Wyłączamy gateway – niepotrzebny w trybie lab/single-binary
+      gateway:
+        enabled: false
+
+      # Wyłączamy testy Helm – przyśpieszają wdrożenie
+      test:
+        enabled: false
+
+  register: helm_loki
+  until: helm_loki is not failed
+  retries: 5
+  delay: 15
+
+- name: Add Loki as Grafana datasource (GrafanaDatasource CR)
+  kubernetes.core.k8s:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    state: "{{ stack_state | default('present') }}"
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: loki-grafana-datasource
+        namespace: monitoring
+        labels:
+          grafana_datasource: "1"
+      data:
+        loki-datasource.yaml: |
+          apiVersion: 1
+          datasources:
+            - name: Loki
+              type: loki
+              uid: loki
+              url: http://loki.monitoring.svc.cluster.local:3100
+              access: proxy
+              isDefault: false
+              jsonData:
+                maxLines: 1000
+
+# tasks file for roles/loki

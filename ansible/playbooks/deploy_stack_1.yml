@@ -1,10 +1,11 @@
-- name: Deploy stack 1 - Standard observability stack (Prometheus + OTel)
+- name: Deploy stack 1 - Standard observability stack (Prometheus + OTel + Loki)
   hosts: k3s_cluster
   gather_facts: true
   vars:
     stack_state: present
   roles:
     - prometheus_stack
+    - loki
     - otel_operator
     - otel_stack
     - istio

@@ -1,0 +1,14 @@
+#SPDX-License-Identifier: MIT-0
+---
+galaxy_info:
+  role_name: fluent_bit
+  description: "Installs Fluent Bit as a DaemonSet on K3s for low-overhead log collection (Stack 2 - eBPF observability)"
+  license: MIT-0
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - all
+
+dependencies:
+  - role: loki
