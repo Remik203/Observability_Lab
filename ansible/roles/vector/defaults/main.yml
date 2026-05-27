@@ -1,0 +1,11 @@
+#SPDX-License-Identifier: MIT-0
+---
+# defaults file for roles/vector
+
+# Wersja chart – blokuje wersję dla odtwarzalności eksperymentów
+# Sprawdź aktualną wersję: helm search repo vector/vector
+vector_chart_version: "0.43.0"
+
+# Adres serwisu Loki w klastrze (backend logów)
+vector_loki_host: "loki.monitoring.svc.cluster.local"
+vector_loki_port: 3100

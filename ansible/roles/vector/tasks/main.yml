@@ -1,0 +1,121 @@
+#SPDX-License-Identifier: MIT-0
+---
+- name: Add Helm repo for Vector (Datadog)
+  kubernetes.core.helm_repository:
+    name: vector
+    repo_url: "https://helm.vector.dev"
+
+- name: Create logging namespace
+  kubernetes.core.k8s:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    api_version: v1
+    kind: Namespace
+    name: logging
+    state: "{{ stack_state | default('present') }}"
+
+- name: Install Vector as DaemonSet (Rust-based log agent)
+  kubernetes.core.helm:
+    name: vector
+    chart_ref: vector/vector
+    release_namespace: logging
+    create_namespace: false
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    chart_version: "{{ vector_chart_version }}"
+    state: "{{ stack_state | default('present') }}"
+    wait: true
+    values:
+      role: Agent
+      resources:
+        requests:
+          cpu: "20m"
+          memory: "64Mi"
+        limits:
+          cpu: "200m"
+          memory: "256Mi"
+      customConfig:
+        data_dir: /vector-data-dir
+        api:
+          enabled: true
+          address: "0.0.0.0:8686"
+        sources:
+          kubernetes_logs:
+            type: kubernetes_logs
+            self_node_name: "${VECTOR_SELF_NODE_NAME}"
+            exclude_paths_glob_patterns:
+              - "**/vector-*/**"
+          vector_metrics:
+            type: internal_metrics
+        transforms:
+          remap_logs:
+            type: remap
+            inputs:
+              - kubernetes_logs
+            source: |
+              # Utwórz ustrukturyzowane etykiety zgodne z Loki
+              .namespace = .kubernetes.pod_namespace
+              .pod = .kubernetes.pod_name
+              .container = .kubernetes.container_name
+              .node = .kubernetes.pod_node_name
+              # Usuń surowe metadane K8s, by zmniejszyć payload
+              del(.kubernetes)
+              del(.file)
+        sinks:
+          loki:
+            type: loki
+            inputs:
+              - remap_logs
+            endpoint: "http://{{ vector_loki_host }}:{{ vector_loki_port }}"
+            encoding:
+              codec: json
+            labels:
+              job: vector
+              namespace: !unsafe '{{ "{{" }} namespace {{ "}}" }}'
+              pod: !unsafe '{{ "{{" }} pod {{ "}}" }}'
+              node: !unsafe '{{ "{{" }} node {{ "}}" }}'
+            remove_label_fields: true
+            out_of_order_action: accept
+          # Sink do eksportu metryk wewnętrznych Vectora do Prometheusa
+          prometheus_exporter:
+            type: prometheus_exporter
+            inputs:
+              - vector_metrics
+            address: "0.0.0.0:9090"
+      # Montowanie logów hosta
+      extraVolumeMounts:
+        - name: varlog
+          mountPath: /var/log
+          readOnly: true
+        - name: varlibdockercontainers
+          mountPath: /var/lib/docker/containers
+          readOnly: true
+      extraVolumes:
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: varlibdockercontainers
+          hostPath:
+            path: /var/lib/docker/containers
+      env:
+        - name: VECTOR_SELF_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+      podMonitor:
+        enabled: true
+        jobLabel: vector
+        namespaceSelector:
+          matchNames:
+            - logging
+  register: helm_vector
+  until: helm_vector is not failed
+  retries: 5
+  delay: 10
+
+# tasks file for roles/vector
