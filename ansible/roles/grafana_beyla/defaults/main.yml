@@ -1,0 +1,13 @@
+#SPDX-License-Identifier: MIT-0
+---
+# defaults file for roles/grafana_beyla
+
+# Wersja chart – blokuje wersję dla odtwarzalności eksperymentów
+# Sprawdź aktualną wersję: helm search repo grafana/beyla
+beyla_chart_version: "1.5.0"
+
+# Endpoint eksportu trace'ów (Jaeger OTLP HTTP)
+beyla_traces_endpoint: "jaeger.observability.svc.cluster.local:4318"
+
+# Endpoint eksportu metryk OTLP (OTel Collector → Prometheus Remote Write)
+beyla_metrics_endpoint: "prometheus-stack-kube-prom-prometheus.monitoring.svc.cluster.local:9090/api/v1/otlp"

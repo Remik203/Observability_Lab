@@ -44,7 +44,6 @@
               HTTP_Server   On
               HTTP_Listen   0.0.0.0
               HTTP_Port     2020
-              # Bufor wyłącznie w RAM – brak I/O na dysk
               storage.type  memory
         inputs: |
           [INPUT]
@@ -68,7 +67,6 @@
               Keep_Log            Off
               K8S-Logging.Parser  On
               K8S-Logging.Exclude On
-              # Cache wpisów K8s – redukuje wywołania API
               Kube_Meta_Cache_TTL 300
         outputs: |
           [OUTPUT]

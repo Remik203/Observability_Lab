@@ -1,0 +1,15 @@
+#SPDX-License-Identifier: MIT-0
+---
+galaxy_info:
+  role_name: grafana_beyla
+  description: "Installs Grafana Beyla (eBPF auto-instrumentation) - generates RED metrics and traces without SDK injection (Stack 4)"
+  license: MIT-0
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - all
+
+# Beyla eksportuje metryki do Prometheusa i trace'y do Jaegera –
+# oba muszą być już obecne w klastrze.
+dependencies: []

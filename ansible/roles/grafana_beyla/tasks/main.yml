@@ -1,0 +1,87 @@
+#SPDX-License-Identifier: MIT-0
+---
+- name: Add Helm repo for Grafana (Beyla)
+  kubernetes.core.helm_repository:
+    name: grafana
+    repo_url: "https://grafana.github.io/helm-charts"
+
+- name: Create observability namespace for Beyla
+  kubernetes.core.k8s:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    api_version: v1
+    kind: Namespace
+    name: observability
+    state: "{{ stack_state | default('present') }}"
+
+- name: Install Grafana Beyla (eBPF auto-instrumentation)
+  kubernetes.core.helm:
+    name: beyla
+    chart_ref: grafana/beyla
+    release_namespace: observability
+    create_namespace: false
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    chart_version: "{{ beyla_chart_version | default('1.9.0') }}"
+    state: "{{ stack_state | default('present') }}"
+    wait: true
+    values:
+      preset: daemonset
+      podSecurityContext:
+        hostPID: true
+      securityContext:
+        privileged: true
+        readOnlyRootFilesystem: false
+        runAsUser: 0
+      config:
+        data:
+          discovery:
+            services:
+              - k8s_namespace: default
+          attributes:
+            kubernetes:
+              enable: true
+          prometheus:
+            port: 9090
+            path: /metrics
+            features:
+              - application
+              - application_process
+              - network
+            instrumentations:
+              - http
+              - grpc
+          otel_traces_export:
+            endpoint: "http://{{ beyla_traces_endpoint | default('jaeger-ui-nodeport:4318') }}"
+            protocol: http/protobuf
+          otel_metrics_export:
+            endpoint: "http://{{ beyla_metrics_endpoint | default('prometheus-stack-kube-prom-prometheus.monitoring.svc.cluster.local:9090/api/v1/write') }}"
+            protocol: http/protobuf
+      serviceAccount:
+        create: true
+
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "64Mi"
+        limits:
+          cpu: "500m"
+          memory: "256Mi"
+
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+
+      serviceMonitor:
+        enabled: true
+        namespace: monitoring
+        interval: 30s
+        labels:
+          release: prometheus-stack
+
+  register: helm_beyla
+  until: helm_beyla is not failed
+  retries: 5
+  delay: 10

@@ -51,12 +51,10 @@
             inputs:
               - kubernetes_logs
             source: |
-              # Utwórz ustrukturyzowane etykiety zgodne z Loki
               .namespace = .kubernetes.pod_namespace
               .pod = .kubernetes.pod_name
               .container = .kubernetes.container_name
               .node = .kubernetes.pod_node_name
-              # Usuń surowe metadane K8s, by zmniejszyć payload
               del(.kubernetes)
               del(.file)
         sinks:
@@ -74,13 +72,11 @@
               node: !unsafe '{{ "{{" }} node {{ "}}" }}'
             remove_label_fields: true
             out_of_order_action: accept
-          # Sink do eksportu metryk wewnętrznych Vectora do Prometheusa
           prometheus_exporter:
             type: prometheus_exporter
             inputs:
               - vector_metrics
             address: "0.0.0.0:9090"
-      # Montowanie logów hosta
       extraVolumeMounts:
         - name: varlog
           mountPath: /var/log
