@@ -8,7 +8,7 @@ if [ -z "$1" ]; then
     exit 1
 fi
 
-PORTS=(30030 30080 30086)
+PORTS=(30030 30080 30086 30087)
 REMOTE_HOST=$1
 
 for PORT in "${PORTS[@]}"; do

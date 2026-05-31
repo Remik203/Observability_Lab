@@ -6,6 +6,7 @@
   roles:
     - prometheus_stack
     - loki
+    - fluent_bit
     - otel_operator
     - otel_stack
     - istio

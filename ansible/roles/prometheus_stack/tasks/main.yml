@@ -49,4 +49,8 @@
         prometheusSpec:
           enableRemoteWriteReceiver: true
           retention: 1d # Data retention for one day
+          serviceMonitorSelectorNilUsesHelmValues: false
+          podMonitorSelectorNilUsesHelmValues: false
+          serviceMonitorSelector: {}
+          podMonitorSelector: {}
 # tasks file for roles/prometheus_stack

@@ -1,16 +1,2 @@
-*.retry
-*.log
-.ansible/
-k6_tests/results/
-*.qcow2
-
-./k6_tests/results/
-
-*.pem
-*.key
-*.gpg
-secrets.yml
-
-
-.DS_Store
-*~
+# Created by venv; see https://docs.python.org/3/library/venv.html
+*

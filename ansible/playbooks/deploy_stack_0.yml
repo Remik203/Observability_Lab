@@ -3,28 +3,6 @@
   gather_facts: true
   vars:
     stack_state: present
-  tasks:
-    # Wdrożenie samej aplikacji bez żadnych agentów – czysty klaster
-    # Służy jako punkt odniesienia (baseline) do pomiaru narzutu narzędzi
-    - name: Deploy Google Online Boutique (baseline, no instrumentation)
-      ansible.builtin.command:
-        cmd: kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/main/release/kubernetes-manifests.yaml
-      register: kubectl_apply_result
-      changed_when: "'created' in kubectl_apply_result.stdout or 'configured' in kubectl_apply_result.stdout"
-
-    - name: Turn off built-in loadgenerator
-      ansible.builtin.command:
-        cmd: kubectl scale deployment loadgenerator --replicas=0
-      changed_when: true
-
-    - name: Change frontend-external to NodePort
-      ansible.builtin.command:
-        cmd: >
-          kubectl patch svc frontend-external -p
-          '{"spec": {"type": "NodePort", "ports": [{"port": 80, "targetPort": 8080, "nodePort": 30080}]}}'
-      changed_when: true
-
-    - name: Wait until all pods are ready
-      ansible.builtin.command:
-        cmd: kubectl wait --for=condition=available deployment --all --timeout=300s
-      changed_when: false
+  roles:
+    - prometheus_stack
+    - google_demo
