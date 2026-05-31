@@ -13,6 +13,7 @@
     create_namespace: true
     state: "{{ stack_state | default('present') }}"
     wait: true
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
 
 - name: Install Istio discovery (Control Plane) with OTel Tracing enabled
   kubernetes.core.helm:
@@ -22,6 +23,7 @@
     create_namespace: true
     state: "{{ stack_state | default('present') }}"
     wait: true
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
     values:
       meshConfig:
         extensionProviders:
@@ -44,6 +46,7 @@
     create_namespace: true
     state: "{{ stack_state | default('present') }}"
     wait: true
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
     values:
       service:
         type: NodePort
@@ -51,6 +54,7 @@
 - name: Enable Istio sidecar auto-injection for the default namespace
   kubernetes.core.k8s:
     state: present
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
     definition:
       apiVersion: v1
       kind: Namespace

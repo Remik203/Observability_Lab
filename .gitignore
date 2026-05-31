@@ -1,2 +1,18 @@
-# Created by venv; see https://docs.python.org/3/library/venv.html
-*
+*.retry
+*.log
+.ansible/
+.vault_pass
+.vscode
+k6_tests/results/
+*.qcow2
+
+./k6_tests/results/
+
+*.pem
+*.key
+*.gpg
+secrets.yml
+
+
+.DS_Store
+*~

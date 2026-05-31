@@ -193,7 +193,7 @@
 
 - name: Wait for control plane to be ready
   ansible.builtin.wait_for:
-    host: "127.0.0.1}"
+    host: "127.0.0.1"
     port: "{{ api_port }}"
     timeout: 180
   run_once: true
