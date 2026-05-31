@@ -1,6 +1,6 @@
 #!/bin/bash
 
-CONFIG_FILE="$HOME/Observability_Lab/k6_tests/utils/config.js"
+CONFIG_FILE="$(dirname "$0")/utils/config.js"
 
 # Extracting variables with fallback defaults
 RAMP_TIME_SEC=$(grep -m 1 "RAMP_UP_SECONDS=" $CONFIG_FILE | cut -d'=' -f2)
