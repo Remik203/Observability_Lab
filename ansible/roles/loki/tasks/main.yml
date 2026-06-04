@@ -45,18 +45,26 @@
         resources:
           requests:
             cpu: "50m"
-            memory: "128Mi"
+            memory: "256Mi"
           limits:
             cpu: "200m"
-            memory: "256Mi"
+            memory: "512Mi"
         persistence:
-          enable: false
+          enabled: false
         extraVolumeMounts:
-          - name: loki-lab-data
+          - name: loki-data-ram
             mountPath: /var/loki
         extraVolumes:
-          - name: loki-lab-data
+          - name: loki-data-ram
             emptyDir: {}
+
+      # Wyłączamy cache i canary (oszczędność zasobów na maszynie testowej)
+      resultsCache:
+        enabled: false
+      chunksCache:
+        enabled: false
+      lokiCanary:
+        enabled: false
 
       # Wyłączamy komponenty trybu rozdzielonego (distributed)
       read:
@@ -103,5 +111,3 @@
               isDefault: false
               jsonData:
                 maxLines: 1000
-
-# tasks file for roles/loki
