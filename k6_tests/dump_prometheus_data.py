@@ -16,7 +16,7 @@ import time
 import pandas as pd
 import requests
 
-TARGET_IP = os.getenv('TARGET_IP', '***USUNIETO***')
+TARGET_IP = os.getenv('TARGET_IP', '127.0.0.1')
 
 # ─── Observability namespace regex (used across Obs queries) ─────────────
 OBS_NS = 'observability|logging|monitoring|istio-system|kube-system'

@@ -18,7 +18,7 @@
       # Grafana Configuration:
       grafana:
         enabled: true
-        adminPassword: "REDACTED"
+        adminPassword: "{{ vault_grafana_admin_password }}"
         service:
           type: NodePort
           nodePort: 30030 # Grafana port
