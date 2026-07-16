@@ -10,7 +10,7 @@ k6_tests/results/
 ./k6_tests/__pycache__/
 *.pyc
 .local/
-
+*.gz
 *.pem
 *.key
 *.gpg
