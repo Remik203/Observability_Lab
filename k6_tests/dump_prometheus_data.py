@@ -18,24 +18,75 @@ import requests
 
 TARGET_IP = os.getenv('TARGET_IP', '***USUNIETO***')
 
-# Prometheus queries
+# ─── Observability namespace regex (used across Obs queries) ─────────────
+OBS_NS = 'observability|logging|monitoring|istio-system|kube-system'
+
+# ─── Prometheus queries ──────────────────────────────────────────────────
+# Format: "MetricLabel": ("PromQL", "Human-readable description")
 METRICS = {
+    # ── DIMENSION 2a: CPU ──
     "CPU_App": (
-        'sum(rate(container_cpu_usage_seconds_total{namespace="default"}[1m]))',
-        "CPU cores used by application pods",
+        'sum(rate(container_cpu_usage_seconds_total{namespace="default", container!="istio-proxy", container!="POD", container!=""}[1m]))',
+        "CPU cores used by pure application containers",
     ),
     "CPU_Obs": (
-        'sum(rate(container_cpu_usage_seconds_total{namespace=~"observability|logging|monitoring|istio-system|kube-system", container!=""}[1m]))',
-        "CPU cores used by observability / infra pods",
+        f'sum(rate(container_cpu_usage_seconds_total{{namespace=~"{OBS_NS}", container!="POD", container!=""}}[1m]) or rate(container_cpu_usage_seconds_total{{namespace="default", container="istio-proxy"}}[1m]))',
+        "CPU cores used by observability infra AND sidecars",
     ),
+
+    # ── DIMENSION 2b: RAM ──
     "RAM_App": (
-        'sum(container_memory_working_set_bytes{namespace="default"})',
-        "RAM bytes used by application pods",
+        'sum(container_memory_working_set_bytes{namespace="default", container!="istio-proxy", container!="POD", container!=""})',
+        "RAM bytes used by pure application containers",
     ),
     "RAM_Obs": (
-        'sum(container_memory_working_set_bytes{namespace=~"observability|logging|monitoring|istio-system|kube-system"})',
-        "RAM bytes used by observability / infra pods",
+        f'sum(container_memory_working_set_bytes{{namespace=~"{OBS_NS}", container!="POD", container!=""}} or container_memory_working_set_bytes{{namespace="default", container="istio-proxy"}})',
+        "RAM bytes used by observability infra AND sidecars",
     ),
+
+    # ── DIMENSION 2c: DISK I/O ──
+    "DiskWrite_App": (
+        'sum(rate(container_fs_writes_bytes_total{namespace="default", container!="istio-proxy", container!="POD", container!=""}[1m]))',
+        "Disk write by pure application",
+    ),
+    "DiskWrite_Obs": (
+        f'sum(rate(container_fs_writes_bytes_total{{namespace=~"{OBS_NS}", container!="POD", container!=""}}[1m]) or rate(container_fs_writes_bytes_total{{namespace="default", container="istio-proxy"}}[1m]))',
+        "Disk write by observability infra AND sidecars",
+    ),
+
+    # ── DIMENSION 2d: NETWORK I/O (Pod level - shares App and Sidecar) ──
+    "NetRX_App": (
+        'sum(rate(container_network_receive_bytes_total{namespace="default"}[1m]))',
+        "Network receive bytes/s – application pods",
+    ),
+    "NetTX_App": (
+        'sum(rate(container_network_transmit_bytes_total{namespace="default"}[1m]))',
+        "Network transmit bytes/s – application pods",
+    ),
+    "NetRX_Obs": (
+        f'sum(rate(container_network_receive_bytes_total{{namespace=~"{OBS_NS}"}}[1m]))',
+        "Network receive bytes/s – observability pods",
+    ),
+    "NetTX_Obs": (
+        f'sum(rate(container_network_transmit_bytes_total{{namespace=~"{OBS_NS}"}}[1m]))',
+        "Network transmit bytes/s – observability pods",
+    ),
+
+    # ── DIMENSION 3: THROUGHPUT ──
+    "Logs_Ingestion_Rate": (
+        'sum(rate(loki_distributor_bytes_received_total[1m]))',
+        "Loki log ingestion rate (bytes/s)",
+    ),
+    "Spans_Ingestion_Rate": (
+        'sum(rate(otelcol_receiver_accepted_spans[1m]))',
+        "OTel Collector accepted spans/s",
+    ),
+
+    # ── DIMENSION 4: KERNEL CONTEXT SWITCHES (eBPF vs Sidecar) ──
+    "Context_Switches": (
+        'sum(rate(node_context_switches_total[1m]))',
+        "Node context switches per second (Kernel Overhead)",
+    )
 }
 
 STEP = "5s"  # query resolution – must match plot_metrics.py
@@ -120,6 +171,7 @@ def main():
 
     rows: list[dict] = []
     total_points = 0
+    empty_metrics: list[str] = []
 
     for test_id in test_ids:
         test_rows = ts[ts["test_name"] == test_id].sort_values("iteration")
@@ -136,10 +188,11 @@ def main():
                 )
 
                 if not data_points:
-                    print(f"    WARN: {metric_name} iter={iteration} → no data")
+                    if metric_name not in empty_metrics:
+                        empty_metrics.append(metric_name)
+                    print(f"    WARN: {metric_name} iter={iteration} → no data (may not exist on this stack)")
                     continue
 
-                # Compute time relative to start of this test window (seconds)
                 t0 = data_points[0]["time"]
                 for pt in data_points:
                     rows.append({
@@ -159,7 +212,6 @@ def main():
               file=sys.stderr)
         sys.exit(1)
 
-    # Build DataFrame and save
     df = pd.DataFrame(rows, columns=[
         "stack_name", "test_name", "iteration", "time_relative", "metric_name", "value"
     ])
@@ -172,6 +224,8 @@ def main():
     print(f"  ✓ Saved {total_points} data points ({len(df)} rows)")
     print(f"  ✓ Output: {out_path}")
     print(f"  ✓ File size: {os.path.getsize(out_path) / 1024:.1f} KB")
+    if empty_metrics:
+        print(f"  ⚠ Metrics with no data on this stack: {empty_metrics}")
     print("=" * 65)
 
 

@@ -5,8 +5,11 @@
 .vscode
 k6_tests/results/
 *.qcow2
-
+./ansible/inventory.ini
 ./k6_tests/results/
+./k6_tests/__pycache__/
+*.pyc
+.local/
 
 *.pem
 *.key

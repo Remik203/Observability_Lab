@@ -7,15 +7,9 @@ export const CONFIG = {
     BASE_URL: `http://${__ENV.TARGET_IP || '127.0.0.1'}:30080`,
     
     // Define load phases manually as needed
- //   STANDARD_STAGES: [
- //       { duration: '2m', target: 50 },
- //       { duration: '10m', target: 50 },
- //       { duration: '1m', target: 0 }, 
- //   ],
-
     STANDARD_STAGES: [
-        { duration: '1m', target: 50 },
-        { duration: '3m', target: 50 },
+        { duration: '2m', target: 50 },
+        { duration: '10m', target: 50 },
         { duration: '1m', target: 0 }, 
     ],
 

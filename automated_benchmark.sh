@@ -35,7 +35,7 @@ INVENTORY="${ANSIBLE_DIR}/inventory.ini"
 PRIMARY_IP="$TARGET_IP"
 PRIMARY_USER="student"
 
-ITERATIONS=1                      # Number of k6 test iterations per stack
+ITERATIONS=5                     # Number of k6 test iterations per stack
 POD_WAIT_TIMEOUT=600              # Max seconds to wait for pods to be ready
 DEPLOY_SETTLE_TIME=180            # Seconds to wait after deploy for metrics to stabilize
 
@@ -105,7 +105,7 @@ reset_cluster() {
     
     # 4. Wait for API to stabilize
     log_info "Waiting 30s for the fresh K3s API to stabilize..."
-    sleep 30
+    sleep 300
 }
 
 wait_for_pods() {
@@ -288,6 +288,15 @@ for STACK in "${STACKS[@]}"; do
         log_warn "Stack ${STACK} failed but continuing with remaining stacks"
     fi
 done
+
+log_header "K6 BUSINESS METRICS COMPILATION"
+
+log_info "Compiling K6 summary JSONs into business metrics CSV..."
+if (cd "${K6_DIR}" && python3 parse_k6_summaries.py); then
+    log_success "K6 business metrics CSV generated"
+else
+    log_warn "K6 business metrics compilation failed (non-critical)"
+fi
 
 log_header "CROSS-STACK COMPARISON DASHBOARDS"
 

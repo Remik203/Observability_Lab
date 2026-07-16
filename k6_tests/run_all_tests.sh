@@ -25,19 +25,51 @@ mkdir -p "$RESULTS_DIR"
 echo "test_name,iteration,start_time,end_time" > "$TIMESTAMP_FILE"
 
 # ---------------------------------------------------------------------------
-# Helper: run a single test, record start/end Unix timestamps, and cooldown
-# Arguments: $1 = test_id (e.g. test_0), $2 = iteration number, $3+ = command
+# Helper: run a single K6 JS test with --summary-export, record timestamps
+# Arguments: $1 = test_id, $2 = iteration, $3 = k6 JS file
 # ---------------------------------------------------------------------------
-run_test() {
+run_k6_test() {
   local test_id="$1"
   local iteration="$2"
-  shift 2
+  local k6_file="$3"
 
-  echo "  [iter ${iteration}/${ITERATIONS}] Running ${test_id}..."
+  local summary_file="${RESULTS_DIR}/k6_summary_${STACK_NAME}_${test_id}_iter_${iteration}.json"
+
+  echo "  [iter ${iteration}/${ITERATIONS}] Running ${test_id} (k6 ${k6_file})..."
   local START_TIME
   START_TIME=$(date +%s)
 
-  "$@" || true
+  k6 run --summary-export="${summary_file}" "${k6_file}" || true
+
+  local END_TIME
+  END_TIME=$(date +%s)
+
+  echo "${test_id},${iteration},${START_TIME},${END_TIME}" >> "$TIMESTAMP_FILE"
+  echo "  [iter ${iteration}/${ITERATIONS}] ${test_id} finished (${START_TIME} -> ${END_TIME})"
+  
+  echo "  Cooling down for ${COOLDOWN_SEC}s to let the cluster recover..."
+  sleep ${COOLDOWN_SEC}
+}
+
+# ---------------------------------------------------------------------------
+# Helper: run a shell-wrapper test (test_1, test_4) that spawns K6 internally
+# Arguments: $1 = test_id, $2 = iteration, $3 = shell script path
+# ---------------------------------------------------------------------------
+run_shell_test() {
+  local test_id="$1"
+  local iteration="$2"
+  local script="$3"
+
+  echo "  [iter ${iteration}/${ITERATIONS}] Running ${test_id} (${script})..."
+  local START_TIME
+  START_TIME=$(date +%s)
+
+  # Export env vars so the child shell script can produce its own summary JSON
+  K6_SUMMARY_EXPORT="${RESULTS_DIR}/k6_summary_${STACK_NAME}_${test_id}_iter_${iteration}.json" \
+  K6_STACK_NAME="${STACK_NAME}" \
+  K6_TEST_ID="${test_id}" \
+  K6_ITERATION="${iteration}" \
+    bash "${script}" || true
 
   local END_TIME
   END_TIME=$(date +%s)
@@ -60,19 +92,19 @@ for i in $(seq 1 "$ITERATIONS"); do
   echo "================ ITERATION ${i} / ${ITERATIONS} ================"
 
   # Test 0 – Pure Baseline Load (no faults)
-  run_test "test_0" "$i" k6 run test_0_baseline_load.js
+  run_k6_test "test_0" "$i" test_0_baseline_load.js
 
-  # Test 1 – OOMKilled
-  run_test "test_1" "$i" ./test_1_OOMKilled.sh
+  # Test 1 – OOMKilled (shell wrapper with background k6)
+  run_shell_test "test_1" "$i" ./test_1_OOMKilled.sh
 
   # Test 2 – Network Bottleneck
-  run_test "test_2" "$i" k6 run test_2_network_bootleneck.js
+  run_k6_test "test_2" "$i" test_2_network_bootleneck.js
 
   # Test 3 – Poisoned Request
-  run_test "test_3" "$i" k6 run test_3_poisoned_request.js
+  run_k6_test "test_3" "$i" test_3_poisoned_request.js
 
-  # Test 4 – Service Down
-  run_test "test_4" "$i" ./test_4_service_down.sh
+  # Test 4 – Service Down (shell wrapper with background k6)
+  run_shell_test "test_4" "$i" ./test_4_service_down.sh
 
 done
 

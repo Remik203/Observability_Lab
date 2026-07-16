@@ -1,0 +1,202 @@
+---
+# cleanup_cluster.yml – Safely remove all observability components between stacks
+
+- name: Clean cluster between stack deployments
+  hosts: k3s_cluster
+  gather_facts: false
+  vars:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+
+  tasks:
+    - name: "Remove Google Online Boutique application"
+      ansible.builtin.shell: |
+        kubectl delete -f https://raw.githubusercontent.com/GoogleCloudPlatform/microservices-demo/main/release/kubernetes-manifests.yaml \
+          --ignore-not-found=true --timeout=120s 2>&1 || true
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      changed_when: true
+      failed_when: false
+
+    - name: "Uninstall Grafana Beyla (eBPF auto-instrumentation)"
+      kubernetes.core.helm:
+        name: beyla
+        release_namespace: observability
+        state: absent
+        kubeconfig: "{{ kubeconfig }}"
+        wait: true
+        timeout: 5m
+      failed_when: false
+
+    - name: "Uninstall OTel Collector Stack (CRDs + instances)"
+      block:
+        - name: Delete OTel Collector custom resources
+          ansible.builtin.shell: |
+            kubectl delete opentelemetrycollectors.opentelemetry.io --all -A \
+              --ignore-not-found=true --timeout=60s 2>&1 || true
+            kubectl delete instrumentations.opentelemetry.io --all -A \
+              --ignore-not-found=true --timeout=60s 2>&1 || true
+          environment:
+            KUBECONFIG: "{{ kubeconfig }}"
+          changed_when: true
+          failed_when: false
+
+        - name: Uninstall OTel Operator Helm release
+          kubernetes.core.helm:
+            name: opentelemetry-operator
+            release_namespace: opentelemetry-operator-system
+            state: absent
+            kubeconfig: "{{ kubeconfig }}"
+            wait: true
+            timeout: 5m
+          failed_when: false
+
+        - name: Uninstall cert-manager (installed by OTel Operator)
+          kubernetes.core.helm:
+            name: cert-manager
+            release_namespace: cert-manager
+            state: absent
+            kubeconfig: "{{ kubeconfig }}"
+            wait: true
+            timeout: 5m
+          failed_when: false
+
+    - name: "Uninstall Jaeger"
+      kubernetes.core.helm:
+        name: jaeger
+        release_namespace: observability
+        state: absent
+        kubeconfig: "{{ kubeconfig }}"
+        wait: true
+        timeout: 5m
+      failed_when: false
+
+    - name: "Uninstall Fluent Bit"
+      kubernetes.core.helm:
+        name: fluent-bit
+        release_namespace: logging
+        state: absent
+        kubeconfig: "{{ kubeconfig }}"
+        wait: true
+        timeout: 5m
+      failed_when: false
+
+    - name: "Uninstall Vector"
+      kubernetes.core.helm:
+        name: vector
+        release_namespace: logging
+        state: absent
+        kubeconfig: "{{ kubeconfig }}"
+        wait: true
+        timeout: 5m
+      failed_when: false
+
+    - name: "Remove Istio sidecar injection label"
+      ansible.builtin.shell: |
+        kubectl label namespace default istio-injection- --ignore-not-found=true 2>&1 || true
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      changed_when: true
+      failed_when: false
+
+    - name: "Uninstall Istio components"
+      kubernetes.core.helm:
+        name: "{{ item.name }}"
+        release_namespace: "{{ item.ns }}"
+        state: absent
+        kubeconfig: "{{ kubeconfig }}"
+        wait: true
+        timeout: 5m
+      loop:
+        - { name: "istio-ingress", ns: "istio-ingress" }
+        - { name: "istiod",       ns: "istio-system" }
+        - { name: "istio-base",   ns: "istio-system" }
+      loop_control:
+        label: "{{ item.name }}"
+      failed_when: false
+
+    - name: "Uninstall Loki"
+      kubernetes.core.helm:
+        name: loki
+        release_namespace: monitoring
+        state: absent
+        kubeconfig: "{{ kubeconfig }}"
+        wait: true
+        timeout: 5m
+      failed_when: false
+
+    - name: "Uninstall Prometheus Stack (Prometheus + Grafana)"
+      kubernetes.core.helm:
+        name: prometheus-stack
+        release_namespace: monitoring
+        state: absent
+        kubeconfig: "{{ kubeconfig }}"
+        wait: true
+        timeout: 5m
+      failed_when: false
+
+    - name: "Clean up Prometheus CRDs"
+      ansible.builtin.shell: |
+        kubectl delete crd \
+          alertmanagerconfigs.monitoring.coreos.com \
+          alertmanagers.monitoring.coreos.com \
+          podmonitors.monitoring.coreos.com \
+          probes.monitoring.coreos.com \
+          prometheusagents.monitoring.coreos.com \
+          prometheuses.monitoring.coreos.com \
+          prometheusrules.monitoring.coreos.com \
+          scrapeconfigs.monitoring.coreos.com \
+          servicemonitors.monitoring.coreos.com \
+          thanosrulers.monitoring.coreos.com \
+          --ignore-not-found=true 2>&1 || true
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      changed_when: true
+      failed_when: false
+
+    - name: "Uninstall Cilium"
+      kubernetes.core.helm:
+        name: cilium
+        release_namespace: kube-system
+        state: absent
+        kubeconfig: "{{ kubeconfig }}"
+        wait: true
+        timeout: 5m
+      failed_when: false
+
+    - name: "Delete all PVCs in affected namespaces"
+      ansible.builtin.shell: |
+        for ns in monitoring observability logging cert-manager istio-system istio-ingress opentelemetry-operator-system default; do
+          kubectl delete pvc --all -n "$ns" --ignore-not-found=true --timeout=60s 2>&1 || true
+        done
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      changed_when: true
+      failed_when: false
+
+    - name: "Delete PersistentVolumes that are Released/Failed"
+      ansible.builtin.shell: |
+        kubectl delete pv $(kubectl get pv --no-headers 2>/dev/null | awk '$5 ~ /Released|Failed/ {print $1}') \
+          --ignore-not-found=true 2>&1 || true
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      changed_when: true
+      failed_when: false
+
+    - name: "Remove empty namespaces (except kube-system, default)"
+      kubernetes.core.k8s:
+        name: "{{ item }}"
+        api_version: v1
+        kind: Namespace
+        state: absent
+        kubeconfig: "{{ kubeconfig }}"
+        wait: true
+        wait_timeout: 120
+      loop:
+        - monitoring
+        - observability
+        - logging
+        - cert-manager
+        - istio-system
+        - istio-ingress
+        - opentelemetry-operator-system
+      failed_when: false

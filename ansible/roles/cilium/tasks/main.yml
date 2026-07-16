@@ -29,10 +29,10 @@
     values:
       cni:
         chainingMode: flannel
+      enableIPv4Masquerade: false
       k8sServiceHost: "{{ hostvars[groups['k3s_cluster'][0]]['ansible_facts']['default_ipv4']['address'] }}"
       k8sServicePort: 6443
       kubeProxyReplacement: false
-      devices: "{{ ansible_facts['default_ipv4']['interface'] }}"
       operator:
         replicas: 1
       hubble:
