@@ -3,6 +3,8 @@
   gather_facts: true
   vars:
     stack_state: present
+  vars_files:
+    - ../secret
   roles:
     - cilium
     - prometheus_stack

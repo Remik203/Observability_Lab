@@ -47,11 +47,15 @@
       ansible.builtin.set_fact:
         k3s_server_config: "{{ k3s_server_config | combine({'tls-san': api_endpoint}) }}"
 
-    # If the user has provided additional server config, merge it with the generated config
     - name: Merge user server config with generated server config
       when: server_config_yaml is defined
       ansible.builtin.set_fact:
         k3s_server_config: "{{ k3s_server_config | combine(server_config_yaml | from_yaml) }}"
+
+- name: Set Cilium CNI args
+  when: cni_plugin == 'cilium'
+  ansible.builtin.set_fact:
+    extra_server_args: "{{ extra_server_args }} --flannel-backend=none --disable-network-policy"
 
 - name: Download K3s install script
   ansible.builtin.get_url:

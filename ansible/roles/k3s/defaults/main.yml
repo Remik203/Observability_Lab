@@ -1,6 +1,6 @@
 #SPDX-License-Identifier: MIT-0
 ---
-cni_plugin: "cilium"
+cni_plugin: "flannel"
 
 k3s_server_location: "/var/lib/rancher/k3s"
 systemd_dir: "/etc/systemd/system"  # noqa var-naming[no-role-prefix]

@@ -77,8 +77,15 @@ check_vault_pass() {
 
 
 reset_cluster() {
-    log_header "CLUSTER CLEANUP: Wiping & Rebuilding K3s"
+    local stack_name="${1:-default}"
+    log_header "CLUSTER CLEANUP: Wiping & Rebuilding K3s for ${stack_name}"
     
+    local cni_arg=""
+    if [[ "${stack_name}" == "stack_2" || "${stack_name}" == "stack_3" || "${stack_name}" == "stack_4" ]]; then
+        cni_arg="-e cni_plugin=cilium"
+    else
+        cni_arg="-e cni_plugin=flannel"
+    fi
     export ANSIBLE_ROLES_PATH="${ANSIBLE_DIR}/roles"
     export ANSIBLE_CONFIG="${ANSIBLE_DIR}/ansible.cfg"
     
@@ -88,7 +95,7 @@ reset_cluster() {
     
     # 2. Rebuild K3s na primary_node
     log_info "Deploy fresh K3s cluster on primary_node..."
-    if (cd "${ANSIBLE_DIR}" && ansible-playbook -i "inventory.ini" playbooks/site.yml --limit primary_node --vault-password-file "${VAULT_PASS_FILE}"); then
+    if (cd "${ANSIBLE_DIR}" && ansible-playbook -i "inventory.ini" playbooks/site.yml --limit primary_node --vault-password-file "${VAULT_PASS_FILE}" ${cni_arg}); then
         log_success "K3s rebuilt successfully!"
     else
         log_error "Failed to rebuild K3s!"
@@ -209,7 +216,7 @@ process_stack() {
     if ! run_ansible "${playbook}" "Deploy ${stack_name}"; then
         log_error "Deployment failed for ${stack_name}. Saving audit and skipping to cleanup."
         save_audit_log "${stack_name}"
-        reset_cluster
+        reset_cluster "${stack_name}"
         return 1
     fi
     
@@ -240,7 +247,7 @@ process_stack() {
     fi
 
     save_audit_log "${stack_name}"
-    reset_cluster
+    reset_cluster "${stack_name}"
 
     local stack_end
     stack_end=$(date +%s)
@@ -269,7 +276,7 @@ echo ""
 
 # ZAWSZE sterylizujemy klaster przed pierwszym stosem na wypadek brudnego środowiska
 log_info "Pre-flight cleanup..."
-reset_cluster
+reset_cluster "pre_flight"
 
 if ! kubectl cluster-info >/dev/null 2>&1; then
     log_error "Cannot reach Kubernetes cluster even after reset."
