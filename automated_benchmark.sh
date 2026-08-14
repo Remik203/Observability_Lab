@@ -14,13 +14,6 @@
 #   2. Vault password file exists at ansible/.vault_pass
 #   3. Python dependencies: pip install pandas numpy matplotlib requests
 #   4. k6 is installed on the load generator node
-#
-# Output:
-#   results/automated_run.log        – Full stdout/stderr log
-#   results/raw_data_<stack>.csv     – Raw Prometheus dumps per stack
-#   results/audit_<stack>.log        – K8s events snapshot per stack
-#   results/<stack>_*_dashboard.png  – Per-stack per-test charts
-#   results/comparison_*.png         – Cross-stack comparison dashboards
 # =============================================================================
 
 # Configuration
@@ -35,7 +28,7 @@ INVENTORY="${ANSIBLE_DIR}/inventory.ini"
 PRIMARY_IP="$TARGET_IP"
 PRIMARY_USER="student"
 
-ITERATIONS=5                     # Number of k6 test iterations per stack
+ITERATIONS=5                    # Number of k6 test iterations per stack
 POD_WAIT_TIMEOUT=600              # Max seconds to wait for pods to be ready
 DEPLOY_SETTLE_TIME=180            # Seconds to wait after deploy for metrics to stabilize
 
@@ -147,21 +140,35 @@ wait_for_pods() {
 
 run_ansible() {
     local playbook="$1"
-    local description="$2"
+    local desc="$2"
+    local extra_vars="${3:-}"
 
-    log_info "Running Ansible: ${description}"
+    log_info "Running Ansible: ${desc}"
     log_info "  Playbook: ${playbook}"
+    
+    local max_retries=3
+    local attempt=1
+    local success=false
 
     export ANSIBLE_ROLES_PATH="${ANSIBLE_DIR}/roles"
     export ANSIBLE_CONFIG="${ANSIBLE_DIR}/ansible.cfg"
 
-    if (cd "${ANSIBLE_DIR}" && ansible-playbook -i "${INVENTORY}" "${playbook}" --vault-password-file "${VAULT_PASS_FILE}"); then
-        log_success "Ansible completed: ${description}"
-        return 0
-    else
-        log_error "Ansible FAILED: ${description}"
+    while [ $attempt -le $max_retries ]; do
+        if (cd "${ANSIBLE_DIR}" && ansible-playbook -i "${INVENTORY}" "${playbook}" ${extra_vars} --vault-password-file "${VAULT_PASS_FILE}"); then
+            success=true
+            break
+        fi
+        log_error "Ansible FAILED (Attempt $attempt/$max_retries): ${desc}. Retrying in 15 seconds..."
+        sleep 15
+        ((attempt++))
+    done
+
+    if [ "$success" = false ]; then
+        log_error "Ansible FAILED after $max_retries attempts: ${desc}"
         return 1
     fi
+    log_success "Ansible completed: ${desc}"
+    return 0
 }
 
 save_audit_log() {
@@ -207,6 +214,16 @@ process_stack() {
 
     log_header "STACK: ${stack_name}"
     
+    # ZAWSZE sterylizujemy klaster przed wdrożeniem stosu, 
+    # używając prawidłowego CNI dla TEGO stosu.
+    reset_cluster "${stack_name}"
+    
+    if ! kubectl cluster-info >/dev/null 2>&1; then
+        log_error "Cannot reach Kubernetes cluster after reset. Skipping ${stack_name}."
+        return 1
+    fi
+    log_success "Kubernetes cluster is reachable and sterile!"
+    
     local playbook="${ANSIBLE_DIR}/playbooks/deploy_${stack_name}.yml"
     if [ ! -f "${playbook}" ]; then
         log_error "Playbook not found: ${playbook}. Skipping."
@@ -214,9 +231,8 @@ process_stack() {
     fi
 
     if ! run_ansible "${playbook}" "Deploy ${stack_name}"; then
-        log_error "Deployment failed for ${stack_name}. Saving audit and skipping to cleanup."
+        log_error "Deployment failed for ${stack_name}. Saving audit and skipping to next."
         save_audit_log "${stack_name}"
-        reset_cluster "${stack_name}"
         return 1
     fi
     
@@ -247,7 +263,6 @@ process_stack() {
     fi
 
     save_audit_log "${stack_name}"
-    reset_cluster "${stack_name}"
 
     local stack_end
     stack_end=$(date +%s)
@@ -274,15 +289,7 @@ log_success "Python dependencies verified"
 
 echo ""
 
-# ZAWSZE sterylizujemy klaster przed pierwszym stosem na wypadek brudnego środowiska
-log_info "Pre-flight cleanup..."
-reset_cluster "pre_flight"
-
-if ! kubectl cluster-info >/dev/null 2>&1; then
-    log_error "Cannot reach Kubernetes cluster even after reset."
-    exit 1
-fi
-log_success "Kubernetes cluster is reachable and sterile!"
+# Testy są uruchamiane po kolei
 
 FAILED_STACKS=()
 SUCCEEDED_STACKS=()
