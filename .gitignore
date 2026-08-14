@@ -5,7 +5,8 @@
 .vscode
 k6_tests/results/
 *.qcow2
-./ansible/inventory.ini
+ansible/inventory.ini
+ansible/group_vars/all/vault.yml
 ./k6_tests/results/
 ./k6_tests/__pycache__/
 *.pyc
