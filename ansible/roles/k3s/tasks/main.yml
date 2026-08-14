@@ -55,7 +55,7 @@
 - name: Set Cilium CNI args
   when: cni_plugin == 'cilium'
   ansible.builtin.set_fact:
-    extra_server_args: "{{ extra_server_args }} --flannel-backend=none --disable-network-policy"
+    k3s_server_config: "{{ k3s_server_config | combine({'flannel-backend': 'none', 'disable-network-policy': true}) }}"
 
 - name: Download K3s install script
   ansible.builtin.get_url:
@@ -63,11 +63,19 @@
     dest: /usr/local/bin/k3s-install.sh
     mode: '0755'
     force: false
+  register: k3s_dl_result
+  until: k3s_dl_result is success
+  retries: 3
+  delay: 10
 
 - name: Run K3s install script
   when: not ansible_check_mode
   ansible.builtin.command: # noqa inline-env-var
     cmd: /usr/local/bin/k3s-install.sh
+  register: install_result
+  until: install_result.rc == 0
+  retries: 3
+  delay: 10
   # Ensures that extra_install_envs are combined with required env vars
   environment: "{{ _install_envs }}"
   vars:
