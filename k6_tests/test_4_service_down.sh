@@ -23,12 +23,14 @@ echo "Waiting for cluster warm-up (${RAMP_TIME_SEC} seconds)..."
 sleep ${RAMP_TIME_SEC}
 
 echo "INITIATING FAILURE: Scaling checkoutservice to 0 replicas"
+echo "$(date +%s),ServiceDown_Start" >> results/chaos_events.csv
 kubectl scale deployment checkoutservice -n default --replicas=0
 
 echo "Simulating outage for ${FAILURE_TIME_SEC} seconds to collect observability data..."
 sleep ${FAILURE_TIME_SEC}
 
 echo "RESTORING SERVICE: Scaling checkoutservice back to 1 replica..."
+echo "$(date +%s),ServiceDown_End" >> results/chaos_events.csv
 kubectl scale deployment checkoutservice -n default --replicas=1
 
 echo "Service restored. Waiting for K6 to finish naturally..."

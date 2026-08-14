@@ -1,334 +1,406 @@
 #!/usr/bin/env python3
 """
-plot_comparisons.py – Cross-Stack Comparison Dashboards
-========================================================
-Generates comparison dashboards from raw_data_*.csv files AND
-business-impact dashboards from k6_business_metrics.csv.
+plot_comparisons.py — Wykresy porównawcze między stosami obserwowalności
+========================================================================
+Użycie:
+    python3 plot_comparisons.py [--results-dir PATH]
 
-Dashboards:
-  A) Istio vs eBPF (stack_1 vs stack_2)
-  B) Fluent Bit vs Vector (stack_2 vs stack_3)
-  C) Overhead (stack_0 vs stack_4)
-  D) All stacks
-  E) Business Impact – p95 Latency & Failure Rate (from K6 summaries)
-
-Usage:  python3 plot_comparisons.py [--results-dir DIR]
+Wymagania:
+    pip install pandas numpy matplotlib
 """
 
 import argparse
 import glob
+import math
 import os
 import sys
+import warnings
 
-import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+import numpy as np
+import pandas as pd
 
-# Stack palette
-PALETTE = {
-    "stack_0": ("#4CAF50", "Stack 0 – Baseline"),
-    "stack_1": ("#2196F3", "Stack 1 – Istio (sidecar)"),
-    "stack_2": ("#FF5722", "Stack 2 – Cilium+FluentBit"),
-    "stack_3": ("#9C27B0", "Stack 3 – Cilium+Vector"),
-    "stack_4": ("#FF9800", "Stack 4 – Full eBPF (Beyla)"),
+# Konfiguracja globalna
+warnings.filterwarnings(action="ignore", message="All-NaN slice encountered")
+
+plt.rcParams.update({
+    # --- Czcionki ---
+    "font.family": "serif",          
+    "font.size": 10,                 # Bazowy rozmiar
+    "axes.labelsize": 11,            # Podpisy osi (X, Y)
+    "axes.titlesize": 12,            # Tytuł wykresu
+    "xtick.labelsize": 9,            # Wartości na osi X
+    "ytick.labelsize": 9,            # Wartości na osi Y
+    "legend.fontsize": 9,            # Rozmiar tekstu legendy
+    "legend.title_fontsize": 10,
+
+    # --- Ramki i linie ---
+    "axes.linewidth": 0.8,           # Grubość osi wykresu
+    "lines.linewidth": 1.5,          # Grubość linii danych (czytelna po przeskalowaniu)
+    "lines.markersize": 5,           # Wielkość punktów na wykresie
+
+    # --- Siatka ---
+    "axes.grid": True,
+    "grid.alpha": 0.4,
+    "grid.linestyle": ":",           # Kropkowana siatka nie odwraca uwagi od danych
+    "grid.linewidth": 0.6,
+
+    # --- Wygląd tła i legendy ---
+    "figure.facecolor": "white",
+    "axes.facecolor": "white",
+    "legend.frameon": True,          # Ramka wokół legendy
+    "legend.framealpha": 0.9,        # Lekko przezroczyste tło pod legendą
+    "legend.edgecolor": "#CCCCCC",
+
+    # --- Jakość renderowania ---
+    "figure.dpi": 300,
+    "savefig.dpi": 300,
+    "savefig.bbox": "tight",
+})
+
+# Paleta kolorów stosów
+PALETTE: dict[str, tuple[str, str]] = {
+    "stack_0": ("#4CAF50", "Stack 0 (Baseline)"),
+    "stack_1": ("#2196F3", "Stack 1 (Istio)"),
+    "stack_2": ("#FF5722", "Stack 2 (Cilium+FluentBit)"),
+    "stack_3": ("#9C27B0", "Stack 3 (Cilium+Vector)"),
+    "stack_4": ("#FF9800", "Stack 4 (eBPF Beyla)"),
 }
 
-# Unit conversion & label rules
-UNIT_RULES = [
-    ("CPU",             "CPU (cores)",          1),
-    ("RAM",             "RAM (MiB)",            1024 ** 2),
-    ("NetRX",           "Network RX (MB/s)",    1e6),
-    ("NetTX",           "Network TX (MB/s)",    1e6),
-    ("DiskWrite",       "Disk Write (MB/s)",    1e6),
-    ("Logs_Ingestion",  "Log Ingest (MB/s)",    1e6),
-    ("Spans_Ingestion", "Spans/s",              1),
-    ("Context_Switches","Switches/sec",         1),
+# Czytelne nazwy narzędzi i kolory
+TOOL_LABELS: dict[str, str] = {
+    "Istio":          "Istio (sidecar proxy)",
+    "Cilium":         "Cilium (eBPF CNI)",
+    "FluentBit":      "Fluent Bit",
+    "Vector":         "Vector",
+    "OTel_Collector": "OTel Collector",
+    "Jaeger":         "Jaeger v2",
+    "Beyla":          "Beyla (eBPF auto-instrumentacja)",
+    "Loki":           "Grafana Loki",
+    "GoogleApp":      "Aplikacja (Online Boutique)",
+    "K3s_Infra":      "Infrastruktura K3s",
+    "Monitor_Base":   "Prometheus + Grafana + Promtail",
+    "System_Unknown": "Pozostałe procesy systemowe",
+}
+
+TOOL_COLORS: dict[str, str] = {
+    "Istio":          "#1565C0",
+    "K3s_Infra":      "#1A237E",
+    "Vector":         "#00838F",
+    "Monitor_Base":   "#546E7A",
+    "GoogleApp":      "#2E7D32",
+    "OTel_Collector": "#6A1B9A",
+    "Jaeger":         "#C2185B",
+    "Cilium":         "#C62828",
+    "FluentBit":      "#EF6C00",
+    "Loki":           "#5D4037",
+    "Beyla":          "#F9A825",
+    "System_Unknown": "#757575",
+}
+
+# Metryki bazowe i jednostki
+BASE_METRICS = [
+    "CPU", "RAM",
+    "DiskRead", "DiskWrite",
+    "NetRX", "NetTX",
+    "Logs_Ingestion_Rate", "Spans_Ingestion_Rate",
+    "Context_Switches",
+    "HTTP_Errors_Istio", "HTTP_Errors_Beyla",
 ]
 
-def resolve_units(metric_name: str) -> tuple[str, float]:
-    for pattern, ylabel, divisor in UNIT_RULES:
-        if pattern in metric_name:
+# Wyodrębnienie nazwy metryki
+def get_base_metric(name: str) -> str:
+    for bm in BASE_METRICS:
+        if name.startswith(bm):
+            return bm
+    return name
+
+# Wyodrębnienie nazwy komponentu
+def get_component(name: str) -> str:
+    bm = get_base_metric(name)
+    return "Total" if name == bm else name[len(bm) + 1 :]
+
+# Zwracanie etykiety narzędzia
+def tool_label(component: str) -> str:
+    return TOOL_LABELS.get(component, component)
+
+# Etykiety osi na podstawie nazwy metryki
+def resolve_units(bm: str) -> tuple[str, float]:
+    rules = [
+        ("CPU",              "CPU [rdzenie]",        1),
+        ("RAM",              "RAM [MiB]",            1024 ** 2),
+        ("DiskRead",         "Odczyt dysku [MB/s]",  1e6),
+        ("DiskWrite",        "Zapis dysku [MB/s]",   1e6),
+        ("NetRX",            "Sieć RX [MB/s]",       1e6),
+        ("NetTX",            "Sieć TX [MB/s]",       1e6),
+        ("Logs_Ingestion",   "Logi [MB/s]",          1e6),
+        ("Spans_Ingestion",  "Span-y [1/s]",         1),
+        ("Context_Switches", "Ctx Switches [1/s]",   1),
+        ("HTTP_Errors",      "Błędy HTTP [req/s]",   1),
+    ]
+    for pattern, ylabel, divisor in rules:
+        if pattern in bm:
             return ylabel, divisor
-    return "Value", 1
+    return "Wartość", 1
 
-def pretty_title(metric_name: str) -> str:
-    return metric_name.replace("_", " – ", 1).replace("_", " ")
+# Zmiana podkteśleń na spacje 
+def pretty_title(name: str) -> str:
+    return name.replace("_", " ")
 
-plt.rcParams.update({"font.size": 11, "figure.dpi": 150, "savefig.dpi": 200})
 
-# Data loading
-def load_all(results_dir):
-    pattern = os.path.join(results_dir, "raw_data_*.csv")
-    files = sorted(glob.glob(pattern))
-    if not files:
-        print(f"ERROR: No raw_data_*.csv in {results_dir}", file=sys.stderr)
-        sys.exit(1)
-    frames = []
-    for f in files:
-        df = pd.read_csv(f)
-        frames.append(df)
-        print(f"  Loaded {os.path.basename(f)} ({len(df)} rows)")
-    return pd.concat(frames, ignore_index=True)
+# Wyrównanie i przetwarzanie szeregów czasowych
 
-# Aggregation for Time-Series
-def aggregate(df, stack, metric, test=None):
-    mask = (df["stack_name"] == stack) & (df["metric_name"] == metric)
-    if test:
-        mask &= df["test_name"] == test
-    sub = df[mask]
-    if sub.empty:
-        return np.array([]), np.array([]), np.array([])
-    grid = np.arange(0, sub["time_relative"].max() + 5, 5.0)
-    curves = []
-    for _, g in sub.groupby("iteration"):
-        if len(g) < 2:
+def align_and_resample(
+    series_list: list[pd.DataFrame],
+    freq_seconds: float = 5.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    if not series_list:
+        return np.array([]), np.array([])
+
+    max_duration = max(
+        df["time_relative"].max() for df in series_list if not df.empty
+    )
+    if pd.isna(max_duration):
+        return np.array([]), np.array([])
+
+    grid = np.arange(0, max_duration + freq_seconds, freq_seconds)
+    resampled = []
+    for df in series_list:
+        if df.empty:
+            resampled.append(np.full_like(grid, np.nan))
             continue
-        curves.append(np.interp(grid, g["time_relative"].values, g["value"].values,
-                                left=np.nan, right=np.nan))
-    if not curves:
-        return np.array([]), np.array([]), np.array([])
-    m = np.array(curves)
-    return grid, np.nanmean(m, 0), np.nanstd(m, 0)
+        interp = np.interp(
+            grid,
+            df["time_relative"].values,
+            df["value"].values,
+            left=np.nan,
+            right=np.nan,
+        )
+        resampled.append(interp)
+    return grid, np.array(resampled)
 
-# Time-Series Plot (Per Test)
-def plot_metric(ax, df, stacks, metric, test):
-    ylabel, divisor = resolve_units(metric)
-    for s in stacks:
-        col, lbl = PALETTE.get(s, ("gray", s))
-        t, mean, std = aggregate(df, s, metric, test)
-        if len(t) == 0:
-            continue
-        t_min = t / 60.0
-        mean = mean / divisor
-        std = std / divisor
-        ax.plot(t_min, mean, lw=2, color=col, label=lbl)
-        ax.fill_between(t_min, mean - std, mean + std, alpha=0.2, color=col)
-    ax.set_title(pretty_title(metric), fontweight="bold")
-    ax.set_ylabel(ylabel)
-    ax.set_xlabel("Time (min)")
-    ax.legend(loc="upper right", fontsize=9)
-    ax.grid(True, ls="--", alpha=0.4)
-    ax.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
 
-# Bar Chart Plot (Overall Summary)
-def plot_aggregate_bar(ax, df, stacks, metric):
-    ylabel, divisor = resolve_units(metric)
-    tests = sorted(df["test_name"].unique())
-    x = np.arange(len(tests))
-    n_stacks = len(stacks)
-    bar_width = 0.8 / max(n_stacks, 1)
-
-    for i, stack in enumerate(stacks):
-        color, label = PALETTE.get(stack, ("gray", stack))
-        
-        means = []
-        stds = []
-        for t in tests:
-            mask = (df["stack_name"] == stack) & (df["metric_name"] == metric) & (df["test_name"] == t)
-            vals = df[mask]["value"].dropna() / divisor
-            
-            means.append(vals.mean() if not vals.empty else 0)
-            stds.append(vals.std() if len(vals) > 1 else 0)
-
-        offset = (i - n_stacks / 2 + 0.5) * bar_width
-        ax.bar(x + offset, means, bar_width, yerr=stds, capsize=3,
-               label=label, color=color, alpha=0.85)
-
-    ax.set_title(f"{pretty_title(metric)} (Test Averages)", fontweight="bold")
-    ax.set_ylabel(ylabel)
-    ax.set_xticks(x)
-    ax.set_xticklabels(tests, rotation=30, ha="right")
-    ax.legend(fontsize=9)
-    ax.grid(True, axis="y", ls="--", alpha=0.4)
-
-# Dynamic dashboard: discovers all metrics in the data
-def dashboard(df, stacks, title, fname, rdir, test=None):
-    avail = df["stack_name"].unique()
-    valid = [s for s in stacks if s in avail]
-    if not valid:
-        print(f"  ⚠ SKIP {fname} – no data for {stacks}")
-        return
-
-    mask = df["stack_name"].isin(valid)
-    if test:
-        mask &= df["test_name"] == test
-    sub = df[mask]
-    metrics = sorted(sub["metric_name"].unique())
-    if not metrics:
-        print(f"  ⚠ SKIP {fname} – no metrics in data")
-        return
-
-    ncols = 2
-    nrows = max(1, -(-len(metrics) // ncols))  # ceil division
-
-    fig, axes = plt.subplots(nrows, ncols, figsize=(18, 5 * nrows), squeeze=False)
-    fig.suptitle(title, fontsize=17, fontweight="bold", y=0.99)
-    sub_title = "Overall Averages across tests" if test is None else f"Time-Series for Test: {test}"
-    fig.text(0.5, 0.97, sub_title, ha="center", fontsize=11, color="gray")
-
-    for idx, m in enumerate(metrics):
-        row, col = divmod(idx, ncols)
-        if test is None:
-            plot_aggregate_bar(axes[row][col], df, valid, m)
-        else:
-            plot_metric(axes[row][col], df, valid, m, test)
-
-    for idx in range(len(metrics), nrows * ncols):
-        row, col = divmod(idx, ncols)
-        axes[row][col].set_visible(False)
-
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
-    out = os.path.join(rdir, fname)
-    plt.savefig(out)
-    plt.close(fig)
-    print(f"  ✓ {out}")
-
-# Business Impact Dashboard
-def business_impact_dashboard(rdir):
-    csv_path = os.path.join(rdir, "k6_business_metrics.csv")
-    if not os.path.isfile(csv_path):
-        print(f" SKIP Business Impact dashboard – {csv_path} not found")
-        return
-
-    bm = pd.read_csv(csv_path)
-    if bm.empty:
-        print(" SKIP Business Impact dashboard – CSV is empty")
-        return
-
-    stacks = sorted(bm["stack_name"].unique())
-    tests = sorted(bm["test_name"].unique())
-    n_stacks = len(stacks)
-
-    print(f"  Business Impact: {n_stacks} stacks, {len(tests)} tests")
-
-    fig, axes = plt.subplots(1, 2, figsize=(18, 7))
-    fig.suptitle("Business Impact: K6 Client-Side Metrics", fontsize=17, fontweight="bold")
-
-    # Left panel: p95 latency
-    ax = axes[0]
-    x = np.arange(len(tests))
-    bar_width = 0.8 / max(n_stacks, 1)
-    for i, stack in enumerate(stacks):
-        color, label = PALETTE.get(stack, ("gray", stack))
-        stack_df = bm[bm["stack_name"] == stack]
-        means = [stack_df[stack_df["test_name"] == t]["p95_latency_ms"].dropna().mean() for t in tests]
-        stds = [stack_df[stack_df["test_name"] == t]["p95_latency_ms"].dropna().std() for t in tests]
-        offset = (i - n_stacks / 2 + 0.5) * bar_width
-        ax.bar(x + offset, [m if not pd.isna(m) else 0 for m in means], bar_width, 
-               yerr=[s if not pd.isna(s) else 0 for s in stds], capsize=3, label=label, color=color, alpha=0.85)
-
-    ax.set_title("p95 Latency (ms) by Test", fontweight="bold")
-    ax.set_ylabel("p95 Latency (ms)")
-    ax.set_xticks(x)
-    ax.set_xticklabels(tests, rotation=30, ha="right")
-    ax.legend(fontsize=9)
-    ax.grid(True, axis="y", ls="--", alpha=0.4)
-
-    # Right panel: failure rate
-    ax = axes[1]
-    for i, stack in enumerate(stacks):
-        color, label = PALETTE.get(stack, ("gray", stack))
-        stack_df = bm[bm["stack_name"] == stack]
-        means = [stack_df[stack_df["test_name"] == t]["req_failed_rate"].dropna().mean() * 100 for t in tests]
-        stds = [stack_df[stack_df["test_name"] == t]["req_failed_rate"].dropna().std() * 100 for t in tests]
-        offset = (i - n_stacks / 2 + 0.5) * bar_width
-        ax.bar(x + offset, [m if not pd.isna(m) else 0 for m in means], bar_width, 
-               yerr=[s if not pd.isna(s) else 0 for s in stds], capsize=3, label=label, color=color, alpha=0.85)
-
-    ax.set_title("Request Failure Rate (%) by Test", fontweight="bold")
-    ax.set_ylabel("Failure Rate (%)")
-    ax.set_xticks(x)
-    ax.set_xticklabels(tests, rotation=30, ha="right")
-    ax.legend(fontsize=9)
-    ax.grid(True, axis="y", ls="--", alpha=0.4)
-
-    plt.tight_layout()
-    out = os.path.join(rdir, "comparison_E_business_impact.png")
-    plt.savefig(out)
-    plt.close(fig)
-    print(f"  ✓ {out}")
-
-    # Dashboard E2: Boxplot
-    fig, ax = plt.subplots(figsize=(12, 7))
-    fig.suptitle("Business Impact: p95 Latency Distribution per Stack", fontsize=15, fontweight="bold")
-
-    box_data, box_labels, box_colors = [], [], []
-    for stack in stacks:
-        vals = bm[bm["stack_name"] == stack]["p95_latency_ms"].dropna()
-        box_data.append(vals.values)
-        color, label = PALETTE.get(stack, ("gray", stack))
-        box_labels.append(label)
-        box_colors.append(color)
-
-    bp = ax.boxplot(box_data, labels=box_labels, patch_artist=True, notch=False)
-    for patch, color in zip(bp["boxes"], box_colors):
-        patch.set_facecolor(color)
-        patch.set_alpha(0.6)
-
-    ax.set_ylabel("p95 Latency (ms)")
-    ax.set_xlabel("Observability Stack")
-    ax.grid(True, axis="y", ls="--", alpha=0.4)
-    plt.xticks(rotation=20, ha="right")
-    plt.tight_layout()
-    out = os.path.join(rdir, "comparison_E_p95_boxplot.png")
-    plt.savefig(out)
-    plt.close(fig)
-    print(f"  ✓ {out}")
-
-def main():
-    p = argparse.ArgumentParser(description="Cross-stack comparison dashboards.")
-    p.add_argument("--results-dir", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "results"))
-    args = p.parse_args()
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Generuje wykresy porównawcze i tabelę metryk.",
+    )
+    parser.add_argument(
+        "--results-dir",
+        default=os.path.join(os.path.dirname(__file__), "results"),
+    )
+    args = parser.parse_args()
     rdir = args.results_dir
-    os.makedirs(rdir, exist_ok=True)
 
-    print("=" * 70)
-    print("  Cross-Stack Comparison Dashboard Generator")
-    print("=" * 70)
-    df = load_all(rdir)
-    tests = sorted(df["test_name"].unique())
+    files = sorted(glob.glob(os.path.join(rdir, "raw_data_*.csv")))
+    if not files:
+        print("ERROR: Nie znaleziono plików raw_data_*.csv", file=sys.stderr)
+        sys.exit(1)
 
-    print("── A: Istio vs Cilium ──")
-    dashboard(df, ["stack_1", "stack_2"], "Challenge A: Istio (Sidecar) vs Cilium (eBPF)\nObservability Resource Usage", "comparison_A_istio_vs_ebpf.png", rdir)
-    for t in tests:
-        dashboard(df, ["stack_1", "stack_2"], f"A: Istio vs Cilium – {t}", f"comparison_A_{t}.png", rdir, t)
+    df = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
 
-    print("\n── B: Fluent Bit vs Vector ──")
-    dashboard(df, ["stack_2", "stack_3"], "Challenge B: Fluent Bit (C) vs Vector (Rust)\nLog Agent Comparison", "comparison_B_fluentbit_vs_vector.png", rdir)
-    for t in tests:
-        dashboard(df, ["stack_2", "stack_3"], f"B: FluentBit vs Vector – {t}", f"comparison_B_{t}.png", rdir, t)
+    # 1. Obliczanie statystyk per narzędzie do tabeli
+    print("Obliczanie kluczowych metryk per narzędzie...")
+    summary_rows: list[dict] = []
 
-    print("\n── C: Overhead ──")
-    dashboard(df, ["stack_0", "stack_4"], "Challenge C: Observability Overhead\nBaseline vs Full eBPF Stack", "comparison_C_overhead.png", rdir)
-    for t in tests:
-        dashboard(df, ["stack_0", "stack_4"], f"C: Overhead – {t}", f"comparison_C_{t}.png", rdir, t)
+    for stack in sorted(df["stack_name"].unique()):
+        for test in sorted(df["test_name"].unique()):
+            sub = df[(df["stack_name"] == stack) & (df["test_name"] == test)]
+            if sub.empty:
+                continue
 
-    # D: All stacks
-    print("\n── D: All Stacks ──")
-    # 1. Wykres słupkowy (Średnie ze wszystkich testów dla wszystkich stosów)
-    dashboard(df, ["stack_0", "stack_1", "stack_2", "stack_3", "stack_4"],
-              "All Stacks – Complete Resource Usage Comparison (Averages)",
-              "comparison_ALL_stacks_summary.png", rdir)
-    
-    # 2. Wykresy liniowe (Każdy test osobno z nałożonymi 5 liniami na raz!)
-    for t in tests:
-        dashboard(df, ["stack_0", "stack_1", "stack_2", "stack_3", "stack_4"], 
-                  f"D: All Stacks Time-Series – {t}",
-                  f"comparison_ALL_stacks_{t}.png", rdir, t)
-    print("\n── E: Business Impact ──")
-    business_impact_dashboard(rdir)
+            for m_name in sub["metric_name"].unique():
+                bm = get_base_metric(m_name)
+                comp = get_component(m_name)
+                _, div = resolve_units(bm)
 
-    # F: The Ultimate Showdown (Baseline vs Istio vs eBPF)
-    print("\n── F: Baseline vs Istio vs eBPF ──")
-    dashboard(df, ["stack_0", "stack_1", "stack_4"],
-              "Challenge F: Architecture Showdown\nBaseline vs Istio (Sidecar) vs Full eBPF",
-              "comparison_F_showdown.png", rdir)
-    for t in tests:
-        dashboard(df, ["stack_0", "stack_1", "stack_4"], f"F: Showdown – {t}",
-                  f"comparison_F_{t}.png", rdir, t)
+                m_sub = sub[sub["metric_name"] == m_name]
+                iter_frames = [
+                    g.sort_values("time_relative")
+                    for _, g in m_sub.groupby("iteration")
+                ]
+                if not iter_frames:
+                    continue
 
-    print(f"\n{'=' * 70}\n  ✓ All dashboards generated.\n  ✓ Dir: {rdir}\n{'=' * 70}")
+                t, vals_2d = align_and_resample(iter_frames)
+                if len(t) == 0:
+                    continue
+
+                # Mediana po iteracjach
+                median_curve = np.nanmedian(vals_2d, axis=0) / div
+                valid = median_curve[~np.isnan(median_curve)]
+                if len(valid) == 0:
+                    continue
+
+                summary_rows.append({
+                    "Stack":     stack,
+                    "Test":      test,
+                    "Metric":    bm,
+                    "Component": comp,
+                    "Tool":      tool_label(comp),
+                    "Mean":      round(float(np.mean(valid)), 6),
+                    "Median":    round(float(np.median(valid)), 6),
+                    "StdDev":    round(float(np.std(valid)), 6),
+                    "P95":       round(float(np.percentile(valid, 95)), 6),
+                    "P99":       round(float(np.percentile(valid, 99)), 6),
+                    "Max":       round(float(np.max(valid)), 6),
+                })
+
+    sum_df = pd.DataFrame(summary_rows)
+    sum_path = os.path.join(rdir, "metrics_summary.csv")
+    sum_df.to_csv(sum_path, index=False)
+    print(f"Zapisano tabelę metryk: {sum_path}")
+
+    # 2. Wykresy słupkowe (stacked bar, P95) per narzędzie
+    print("Generowanie wykresów słupkowych...")
+    for test in sorted(df["test_name"].unique()):
+        test_sum = sum_df[sum_df["Test"] == test]
+        if test_sum.empty:
+            continue
+
+        bms = sorted(test_sum["Metric"].unique())
+        ncols = 2
+        nrows = math.ceil(len(bms) / ncols)
+
+        fig, axes = plt.subplots(
+            nrows, ncols,
+            figsize=(12 * ncols, 7 * nrows),
+            squeeze=False,
+        )
+        fig.suptitle(
+            f"Porównanie narzutu zasobów (P95) — {test.upper()}",
+            fontsize=18, fontweight="bold",
+        )
+
+        for idx, bm in enumerate(bms):
+            row, col = divmod(idx, ncols)
+            ax = axes[row][col]
+            ylab, _ = resolve_units(bm)
+
+            bm_df = test_sum[test_sum["Metric"] == bm]
+            stacks = sorted(bm_df["Stack"].unique())
+            comps = [
+                c for c in sorted(bm_df["Component"].unique())
+                if c not in ("Total",)
+            ]
+
+            bottoms = np.zeros(len(stacks))
+
+            for c in comps:
+                c_vals = []
+                for s in stacks:
+                    val = bm_df[
+                        (bm_df["Stack"] == s) & (bm_df["Component"] == c)
+                    ]["P95"].sum()
+                    c_vals.append(val)
+                ax.bar(
+                    stacks, c_vals, bottom=bottoms,
+                    label=tool_label(c),
+                    color=TOOL_COLORS.get(c, "#333333"),
+                    edgecolor="white", linewidth=0.5,
+                )
+                bottoms += np.array(c_vals)
+
+            ax.set_ylabel(f"P95 {ylab}")
+            ax.set_title(pretty_title(bm), fontsize=13)
+            ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+
+            # Etykiety osi X
+            ax.set_xticks(range(len(stacks)))
+            ax.set_xticklabels(
+                [PALETTE.get(s, (None, s))[1] for s in stacks],
+                rotation=30, ha="right", fontsize=10,
+            )
+
+        # Ukryj puste panele
+        for idx in range(len(bms), nrows * ncols):
+            r, c = divmod(idx, ncols)
+            axes[r][c].set_visible(False)
+
+        plt.tight_layout()
+        out = os.path.join(rdir, f"comparison_bar_{test}.png")
+        plt.savefig(out, bbox_inches="tight")
+        plt.close(fig)
+        print(f"    → {out}")
+
+    # 3. Boxploty p95 latency
+    k6_csv = os.path.join(rdir, "k6_business_metrics.csv")
+    if os.path.exists(k6_csv):
+        print("Generowanie boxplotów p95 latency...")
+        k6_df = pd.read_csv(k6_csv)
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        tests = sorted(k6_df["test_name"].unique())
+        stacks = sorted(k6_df["stack_name"].unique())
+
+        data: list[np.ndarray] = []
+        positions: list[float] = []
+        colors: list[str] = []
+        tick_positions: list[float] = []
+
+        pos = 1
+        for t in tests:
+            tick_positions.append(pos + (len(stacks) - 1) / 2.0)
+            for s in stacks:
+                vals = (
+                    k6_df[
+                        (k6_df["test_name"] == t) & (k6_df["stack_name"] == s)
+                    ]["p95_latency_ms"]
+                    .dropna()
+                    .values
+                )
+                if len(vals) > 0:
+                    data.append(vals)
+                    positions.append(pos)
+                    colors.append(PALETTE.get(s, ("gray", s))[0])
+                pos += 1
+            pos += 1  # przerwa między scenariuszami
+
+        if data:
+            bplot = ax.boxplot(
+                data,
+                positions=positions,
+                patch_artist=True,
+                notch=True,
+                boxprops=dict(alpha=0.85),
+                medianprops=dict(color="black", linewidth=2),
+                whiskerprops=dict(linewidth=1.2),
+                capprops=dict(linewidth=1.2),
+            )
+            for patch, color in zip(bplot["boxes"], colors):
+                patch.set_facecolor(color)
+
+            ax.set_xticks(tick_positions)
+            ax.set_xticklabels(
+                [t.upper() for t in tests],
+                fontsize=12, fontweight="bold",
+            )
+
+            from matplotlib.patches import Patch
+
+            legend_elements = [
+                Patch(
+                    facecolor=PALETTE.get(s, ("gray", s))[0],
+                    label=PALETTE.get(s, ("gray", s))[1],
+                )
+                for s in stacks
+            ]
+            ax.legend(handles=legend_elements, loc="upper left", fontsize=11)
+
+        ax.set_title(
+            "Wpływ stosu na opóźnienia aplikacji — p95 Latency",
+            fontsize=16, fontweight="bold",
+        )
+        ax.set_ylabel("p95 Latency [ms]", fontsize=13)
+        ax.grid(axis="y", linestyle="--", alpha=0.6)
+        plt.tight_layout()
+        out = os.path.join(rdir, "comparison_E_p95_boxplot.png")
+        plt.savefig(out, bbox_inches="tight")
+        plt.close(fig)
+        print(f"    → {out}")
+
+    print("Wszystkie wykresy porównawcze wygenerowane.")
+
 
 if __name__ == "__main__":
     main()

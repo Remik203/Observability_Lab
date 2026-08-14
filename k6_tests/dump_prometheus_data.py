@@ -1,104 +1,187 @@
 #!/usr/bin/env python3
 """
-Usage:
+dump_prometheus_data.py — Eksport surowych metryk z Prometheusa do CSV
+======================================================================
+Użycie:
     python3 dump_prometheus_data.py <stack_name> [--prometheus URL]
 
-Output:
-    results/raw_data_<stack_name>.csv
-    Columns: stack_name, test_name, iteration, time_relative, metric_name, value
+Wymagania:
+    pip install pandas requests
 """
 
 import argparse
-import sys
 import os
+import sys
 import time
+from typing import Any
 
 import pandas as pd
 import requests
 
-TARGET_IP = os.getenv('TARGET_IP', '127.0.0.1')
+# Konfiguracja 
+TARGET_IP = os.getenv("TARGET_IP", "127.0.0.1")
+STEP = "5s"
+RATE_WINDOW = "15s"
+MAX_RETRIES = 3
+RETRY_DELAY = 5
 
-# ─── Observability namespace regex (used across Obs queries) ─────────────
-OBS_NS = 'observability|logging|monitoring|istio-system|kube-system'
-
-# ─── Prometheus queries ──────────────────────────────────────────────────
-# Format: "MetricLabel": ("PromQL", "Human-readable description")
-METRICS = {
-    # ── DIMENSION 2a: CPU ──
-    "CPU_App": (
-        'sum(rate(container_cpu_usage_seconds_total{namespace="default", container!="istio-proxy", container!="POD", container!=""}[1m]))',
-        "CPU cores used by pure application containers",
+# Definicje metryk PromQL
+METRICS: dict[str, tuple[str, str]] = {
+    "CPU": (
+        f'sum by (namespace, pod, container) ('
+        f'  rate(container_cpu_usage_seconds_total'
+        f'    {{container!="POD", container!=""}}[{RATE_WINDOW}])'
+        f')',
+        "Zużycie CPU per kontener [rdzenie]",
     ),
-    "CPU_Obs": (
-        f'sum(rate(container_cpu_usage_seconds_total{{namespace=~"{OBS_NS}", container!="POD", container!=""}}[1m]) or rate(container_cpu_usage_seconds_total{{namespace="default", container="istio-proxy"}}[1m]))',
-        "CPU cores used by observability infra AND sidecars",
+    "RAM": (
+        'sum by (namespace, pod, container) ('
+        '  container_memory_working_set_bytes'
+        '    {container!="POD", container!=""}'
+        ')',
+        "Pamięć working-set per kontener [bajty]",
     ),
-
-    # ── DIMENSION 2b: RAM ──
-    "RAM_App": (
-        'sum(container_memory_working_set_bytes{namespace="default", container!="istio-proxy", container!="POD", container!=""})',
-        "RAM bytes used by pure application containers",
+    "DiskRead": (
+        f'sum by (namespace, pod, container) ('
+        f'  rate(container_fs_reads_bytes_total'
+        f'    {{container!="POD", container!=""}}[{RATE_WINDOW}])'
+        f')',
+        "Odczyty dyskowe per kontener [B/s]",
     ),
-    "RAM_Obs": (
-        f'sum(container_memory_working_set_bytes{{namespace=~"{OBS_NS}", container!="POD", container!=""}} or container_memory_working_set_bytes{{namespace="default", container="istio-proxy"}})',
-        "RAM bytes used by observability infra AND sidecars",
+    "DiskWrite": (
+        f'sum by (namespace, pod, container) ('
+        f'  rate(container_fs_writes_bytes_total'
+        f'    {{container!="POD", container!=""}}[{RATE_WINDOW}])'
+        f')',
+        "Zapisy dyskowe per kontener [B/s]",
     ),
-
-    # ── DIMENSION 2c: DISK I/O ──
-    "DiskWrite_App": (
-        'sum(rate(container_fs_writes_bytes_total{namespace="default", container!="istio-proxy", container!="POD", container!=""}[1m]))',
-        "Disk write by pure application",
+    "NetRX": (
+        f'sum by (namespace, pod) ('
+        f'  rate(container_network_receive_bytes_total[{RATE_WINDOW}])'
+        f')',
+        "Ruch sieciowy przychodzący per pod [B/s]",
     ),
-    "DiskWrite_Obs": (
-        f'sum(rate(container_fs_writes_bytes_total{{namespace=~"{OBS_NS}", container!="POD", container!=""}}[1m]) or rate(container_fs_writes_bytes_total{{namespace="default", container="istio-proxy"}}[1m]))',
-        "Disk write by observability infra AND sidecars",
+    "NetTX": (
+        f'sum by (namespace, pod) ('
+        f'  rate(container_network_transmit_bytes_total[{RATE_WINDOW}])'
+        f')',
+        "Ruch sieciowy wychodzący per pod [B/s]",
     ),
-
-    # ── DIMENSION 2d: NETWORK I/O (Pod level - shares App and Sidecar) ──
-    "NetRX_App": (
-        'sum(rate(container_network_receive_bytes_total{namespace="default"}[1m]))',
-        "Network receive bytes/s – application pods",
-    ),
-    "NetTX_App": (
-        'sum(rate(container_network_transmit_bytes_total{namespace="default"}[1m]))',
-        "Network transmit bytes/s – application pods",
-    ),
-    "NetRX_Obs": (
-        f'sum(rate(container_network_receive_bytes_total{{namespace=~"{OBS_NS}"}}[1m]))',
-        "Network receive bytes/s – observability pods",
-    ),
-    "NetTX_Obs": (
-        f'sum(rate(container_network_transmit_bytes_total{{namespace=~"{OBS_NS}"}}[1m]))',
-        "Network transmit bytes/s – observability pods",
-    ),
-
-    # ── DIMENSION 3: THROUGHPUT ──
     "Logs_Ingestion_Rate": (
-        'sum(rate(loki_distributor_bytes_received_total[1m]))',
-        "Loki log ingestion rate (bytes/s)",
+        f'sum(rate(loki_distributor_bytes_received_total[{RATE_WINDOW}]))',
+        "Loki — tempo przyjmowania logów [B/s]",
     ),
     "Spans_Ingestion_Rate": (
-        'sum(rate(otelcol_receiver_accepted_spans[1m]))',
-        "OTel Collector accepted spans/s",
+        f'sum(rate(otelcol_receiver_accepted_spans[{RATE_WINDOW}]))',
+        "OTel Collector — przyjęte span-y [span/s]",
     ),
-
-    # ── DIMENSION 4: KERNEL CONTEXT SWITCHES (eBPF vs Sidecar) ──
     "Context_Switches": (
-        'sum(rate(node_context_switches_total[1m]))',
-        "Node context switches per second (Kernel Overhead)",
-    )
+        f'sum(rate(node_context_switches_total[{RATE_WINDOW}]))',
+        "Przełączenia kontekstu jądra [1/s] — narzut eBPF vs sidecar",
+    ),
+    "HTTP_Errors_Istio": (
+        f'sum(rate(istio_requests_total{{response_code=~"4..|5.."}}[{RATE_WINDOW}]))',
+        "Istio — tempo żądań 4xx/5xx [req/s]",
+    ),
+    "HTTP_Errors_Beyla": (
+        f'sum(rate(http_server_request_duration_seconds_count'
+        f'  {{http_response_status_code=~"4..|5.."}}[{RATE_WINDOW}]))',
+        "Beyla eBPF — tempo żądań 4xx/5xx [req/s]",
+    ),
 }
 
-STEP = "5s"  # query resolution – must match plot_metrics.py
-MAX_RETRIES = 3
-RETRY_DELAY = 5  # seconds between retries
+
+# *** Mapowanie kontenerów / podów na komponenty logiczne ***
+# Kategorie:
+#   GoogleApp      – mikroserwisy aplikacji Online Boutique
+#   Istio          – sidecar proxy, istiod, ingress
+#   Cilium         – agent Cilium, Hubble
+#   FluentBit      – kolektor logów Fluent Bit
+#   Vector         – kolektor logów Vector
+#   OTel_Collector – OpenTelemetry Collector
+#   Jaeger         – Jaeger (backend tracingu)
+#   Beyla          – Grafana Beyla (auto-instrumentacja eBPF)
+#   Loki           – Grafana Loki (backend logów)
+#   Monitor_Base   – Prometheus, Grafana, Promtail, node-exporter
+#   K3s_Infra      – CoreDNS, Traefik, metrics-server, local-path-provisioner
+#   System_Unknown – kontenery niezaklasyfikowane
+
+_GOOGLE_APP_CONTAINERS = frozenset([
+    "adservice", "cartservice", "checkoutservice", "currencyservice",
+    "emailservice", "frontend", "paymentservice", "productcatalogservice",
+    "recommendationservice", "shippingservice", "loadgenerator", "redis-cart",
+])
 
 
-def query_prometheus_range(prom_url: str, promql: str, start: int, end: int) -> list[dict]:
-    """
-    Query the Prometheus range API and return a list of (timestamp, value) dicts.
-    Retries on transient failures.
-    """
+def _classify_by_name(name: str) -> str | None:
+    """Próbuje zaklasyfikować na podstawie fragmentu nazwy kontenera/poda."""
+    n = name.lower()
+    if "fluent-bit" in n or "fluentbit" in n:
+        return "FluentBit"
+    if "vector" in n:
+        return "Vector"
+    if "istio" in n or "discovery" in n:
+        return "Istio"
+    if "cilium" in n or "hubble" in n:
+        return "Cilium"
+    if "jaeger" in n:
+        return "Jaeger"
+    if "opentelemetry" in n or "otel-" in n or "otel_" in n or n == "otel":
+        return "OTel_Collector"
+    if "beyla" in n:
+        return "Beyla"
+    if "loki" in n:
+        return "Loki"
+    if any(kw in n for kw in ("prometheus", "grafana", "promtail",
+                                "node-exporter", "kube-state-metrics")):
+        return "Monitor_Base"
+    if n in _GOOGLE_APP_CONTAINERS or any(svc in n for svc in _GOOGLE_APP_CONTAINERS):
+        return "GoogleApp"
+    if any(kw in n for kw in ("coredns", "metrics-server", "local-path-provisioner",
+                                "svclb", "traefik")):
+        return "K3s_Infra"
+    return None
+
+
+def get_component(labels: dict[str, str]) -> str:
+    """Mapuje etykiety Prometheusa na nazwę komponentu logicznego."""
+    container = labels.get("container", "")
+    pod = labels.get("pod", "")
+    ns = labels.get("namespace", "")
+
+    # 1. Klasyfikacja po nazwie kontenera
+    if container:
+        result = _classify_by_name(container)
+        if result:
+            return result
+
+    # 2. Klasyfikacja po nazwie poda
+    if pod:
+        result = _classify_by_name(pod)
+        if result:
+            return result
+
+    # 3. Klasyfikacja po namespace
+    if ns in ("monitoring", "logging", "observability"):
+        return "Monitor_Base"
+    if ns == "kube-system":
+        return "K3s_Infra"
+    if ns in ("istio-system", "istio-ingress"):
+        return "Istio"
+    if ns == "cert-manager":
+        return "K3s_Infra"
+
+    return "System_Unknown"
+
+
+# Komunikacja z Prometheusem
+
+def query_prometheus_range(
+    prom_url: str,
+    promql: str,
+    start: int,
+    end: int,
+) -> list[dict[str, Any]]:
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             resp = requests.get(
@@ -110,27 +193,41 @@ def query_prometheus_range(prom_url: str, promql: str, start: int, end: int) -> 
             data = resp.json()
 
             if data["status"] != "success":
-                raise RuntimeError(f"Prometheus error: {data.get('error', 'unknown')}")
+                raise RuntimeError(
+                    f"Prometheus zwrócił błąd: {data.get('error', 'nieznany')}"
+                )
 
             results = data["data"]["result"]
             if not results:
                 return []
 
-            # Take first result vector (queries use sum() aggregation)
-            return [{"time": float(ts), "value": float(val)} for ts, val in results[0]["values"]]
+            all_data: list[dict[str, Any]] = []
+            for series in results:
+                labels = series.get("metric", {})
+                for ts, val in series["values"]:
+                    all_data.append({
+                        "time": float(ts),
+                        "value": float(val),
+                        "labels": labels,
+                    })
+            return all_data
 
         except requests.exceptions.RequestException as exc:
             if attempt < MAX_RETRIES:
-                print(f"      WARN: Attempt {attempt}/{MAX_RETRIES} failed: {exc}. "
-                      f"Retrying in {RETRY_DELAY}s...")
+                print(
+                    f"      WARN: Próba {attempt}/{MAX_RETRIES} nieudana: {exc}. "
+                    f"Ponowienie za {RETRY_DELAY}s..."
+                )
                 time.sleep(RETRY_DELAY)
             else:
-                print(f"      ERROR: All {MAX_RETRIES} attempts failed for query. Skipping.", file=sys.stderr)
+                print(
+                    f"      ERROR: Wszystkie {MAX_RETRIES} prób nieudanych. Pomijam.",
+                    file=sys.stderr,
+                )
                 return []
 
 
 def load_timestamps(csv_path: str) -> pd.DataFrame:
-    """Load the timestamps CSV produced by run_all_tests.sh."""
     df = pd.read_csv(csv_path)
     df.columns = df.columns.str.strip()
     for col in ("start_time", "end_time"):
@@ -139,14 +236,18 @@ def load_timestamps(csv_path: str) -> pd.DataFrame:
     return df
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Dump raw Prometheus metrics to CSV for offline analysis."
+        description="Eksport surowych metryk Prometheusa do CSV.",
     )
-    parser.add_argument("stack_name", help="Stack identifier (e.g. stack_0, stack_1)")
     parser.add_argument(
-        "--prometheus", default=f'http://{TARGET_IP}:30090',
-        help=f'Prometheus base URL (default: http://{TARGET_IP}:30090)',
+        "stack_name",
+        help="Identyfikator stosu (np. stack_0, stack_1, …)",
+    )
+    parser.add_argument(
+        "--prometheus",
+        default=f"http://{TARGET_IP}:30090",
+        help=f"URL bazowy Prometheusa (domyślnie http://{TARGET_IP}:30090)",
     )
     args = parser.parse_args()
 
@@ -154,19 +255,22 @@ def main():
     csv_path = os.path.join(results_dir, f"{args.stack_name}_timestamps.csv")
 
     if not os.path.isfile(csv_path):
-        print(f"ERROR: Timestamps file not found: {csv_path}", file=sys.stderr)
+        print(f"ERROR: Plik z timestampami nie istnieje: {csv_path}", file=sys.stderr)
         sys.exit(1)
 
     ts = load_timestamps(csv_path)
     test_ids = sorted(ts["test_name"].unique())
 
-    print("=" * 65)
-    print(f"  Prometheus Data Dumper")
-    print(f"  Stack:      {args.stack_name}")
-    print(f"  Tests:      {test_ids}")
-    print(f"  Metrics:    {list(METRICS.keys())}")
-    print(f"  Prometheus: {args.prometheus}")
-    print("=" * 65)
+    # ── Podsumowanie konfiguracji ────────────────────────────────────────
+    print("=" * 70)
+    print("  Prometheus Data Dumper")
+    print(f"  Stos:           {args.stack_name}")
+    print(f"  Scenariusze:    {test_ids}")
+    print(f"  Metryki:        {list(METRICS.keys())}")
+    print(f"  Okno rate():    {RATE_WINDOW}")
+    print(f"  Krok siatki:    {STEP}")
+    print(f"  Prometheus URL: {args.prometheus}")
+    print("=" * 70)
     print()
 
     rows: list[dict] = []
@@ -175,7 +279,7 @@ def main():
 
     for test_id in test_ids:
         test_rows = ts[ts["test_name"] == test_id].sort_values("iteration")
-        print(f"  [{test_id}] {len(test_rows)} iteration(s)")
+        print(f"  [{test_id}] {len(test_rows)} iteracja(-e)")
 
         for _, row in test_rows.iterrows():
             iteration = int(row["iteration"])
@@ -184,49 +288,73 @@ def main():
 
             for metric_name, (promql, description) in METRICS.items():
                 data_points = query_prometheus_range(
-                    args.prometheus, promql, start_ts, end_ts
+                    args.prometheus, promql, start_ts, end_ts,
                 )
 
                 if not data_points:
                     if metric_name not in empty_metrics:
                         empty_metrics.append(metric_name)
-                    print(f"    WARN: {metric_name} iter={iteration} → no data (may not exist on this stack)")
+                    print(
+                        f"    WARN: {metric_name} iter={iteration} "
+                        f"→ brak danych (metryka może nie istnieć w tym stosie)"
+                    )
                     continue
 
-                t0 = data_points[0]["time"]
+                t0 = min(pt["time"] for pt in data_points)
                 for pt in data_points:
+                    labels = pt.get("labels", {})
+                    component = get_component(labels)
+
+                    is_global = any(
+                        kw in metric_name
+                        for kw in ("Ingestion", "Context_Switches", "HTTP_Errors")
+                    )
+                    final_metric = metric_name if is_global else f"{metric_name}_{component}"
+
                     rows.append({
                         "stack_name": args.stack_name,
                         "test_name": test_id,
                         "iteration": iteration,
                         "time_relative": round(pt["time"] - t0, 1),
-                        "metric_name": metric_name,
+                        "metric_name": final_metric,
                         "value": pt["value"],
                     })
 
                 total_points += len(data_points)
-                print(f"    ✓ {metric_name} iter={iteration} → {len(data_points)} points")
+                print(f"    ✓ {metric_name} iter={iteration} → {len(data_points)} pkt")
 
+    # Zapis wyników
     if not rows:
-        print("\nWARNING: No data extracted. Check Prometheus connectivity and timestamps.",
-              file=sys.stderr)
+        print(
+            "\nWARNING: Nie wyeksportowano żadnych danych. "
+            "Sprawdź łączność z Prometheusem i poprawność timestampów.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
-    df = pd.DataFrame(rows, columns=[
-        "stack_name", "test_name", "iteration", "time_relative", "metric_name", "value"
-    ])
+    df = pd.DataFrame(
+        rows,
+        columns=["stack_name", "test_name", "iteration",
+                 "time_relative", "metric_name", "value"],
+    )
+
+    # Agregacja szeregów dla tych samych komponentów
+    df = df.groupby(
+        ["stack_name", "test_name", "iteration", "time_relative", "metric_name"],
+        as_index=False
+    )["value"].sum()
 
     out_path = os.path.join(results_dir, f"raw_data_{args.stack_name}.csv")
     df.to_csv(out_path, index=False)
 
     print()
-    print("=" * 65)
-    print(f"  ✓ Saved {total_points} data points ({len(df)} rows)")
-    print(f"  ✓ Output: {out_path}")
-    print(f"  ✓ File size: {os.path.getsize(out_path) / 1024:.1f} KB")
+    print("=" * 70)
+    print(f"  ✓ Zapisano {total_points} punktów pomiarowych ({len(df)} wierszy)")
+    print(f"  ✓ Plik:     {out_path}")
+    print(f"  ✓ Rozmiar:  {os.path.getsize(out_path) / 1024:.1f} KB")
     if empty_metrics:
-        print(f"  ⚠ Metrics with no data on this stack: {empty_metrics}")
-    print("=" * 65)
+        print(f"  ⚠ Metryki bez danych w tym stosie: {empty_metrics}")
+    print("=" * 70)
 
 
 if __name__ == "__main__":

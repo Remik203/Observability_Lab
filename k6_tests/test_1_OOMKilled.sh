@@ -22,12 +22,14 @@ echo "Waiting for cluster warm-up (${RAMP_TIME_SEC} seconds)..."
 sleep "${RAMP_TIME_SEC}"
 
 echo "INITIATING FAILURE: OOMKilled cartservice"
+echo "$(date +%s),OOMKilled_Start" >> results/chaos_events.csv
 kubectl set resources deployment cartservice -n default -c server --limits=memory=20Mi --requests=memory=20Mi
 
 echo "Simulating outage for ${FAILURE_TIME_SEC} seconds to collect data..."
 sleep "${FAILURE_TIME_SEC}"
 
 echo "RESTORING SERVICE: Resetting memory limits..."
+echo "$(date +%s),OOMKilled_End" >> results/chaos_events.csv
 kubectl set resources deployment cartservice -n default -c server --limits=memory=64Mi --requests=memory=64Mi
 
 echo "Service restored. Waiting for K6 to finish..."
