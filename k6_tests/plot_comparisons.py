@@ -279,10 +279,9 @@ def main() -> None:
 
             bm_df = test_sum[test_sum["Metric"] == bm]
             stacks = sorted(bm_df["Stack"].unique())
-            comps = [
-                c for c in sorted(bm_df["Component"].unique())
-                if c not in ("Total",)
-            ]
+            comps = sorted(bm_df["Component"].unique())
+            if any(c for c in comps if c != "Total"):
+                comps = [c for c in comps if c != "Total"]
 
             bottoms = np.zeros(len(stacks))
 

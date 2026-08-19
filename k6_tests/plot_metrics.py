@@ -340,7 +340,7 @@ def main() -> None:
                         if p99 > 0:
                             ax.set_ylim(bottom=0, top=p99 * 1.1)
                         else:
-                            ax.set_ylim(bottom=0)
+                            ax.set_ylim(bottom=0, top=1.0)
 
                 # Znaczniki wystąpienia zdarzeń 
                 for ev_name, times in rel_events.items():
