@@ -71,6 +71,10 @@
           operator: Exists
           effect: NoSchedule
 
+      service:
+        create: true
+        port: 9090
+
       serviceMonitor:
         enabled: true
         namespace: monitoring
