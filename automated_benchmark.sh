@@ -265,32 +265,19 @@ process_stack() {
     fi
 
     log_info "Backing up Prometheus TSDB & Loki raw data for ${stack_name}..."
-    # Prometheus: trigger TSDB snapshot via admin API (distroless image has no tar)
-    local prom_ip
-    prom_ip=$(kubectl get svc -n monitoring prometheus-stack-kube-prom-prometheus -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
-    local snapshot_name
-    snapshot_name=$(kubectl exec -n monitoring prometheus-prometheus-stack-kube-prom-prometheus-0 -c prometheus -- \
-        wget -qO- --post-data '' "http://localhost:9090/api/v1/admin/tsdb/snapshot" 2>/dev/null | \
-        python3 -c "import sys,json; print(json.load(sys.stdin)['data']['name'])" 2>/dev/null)
-    if [ -n "${snapshot_name}" ]; then
-        local tsdb_tmp="${RESULTS_DIR}/tsdb_tmp_${stack_name}"
-        mkdir -p "${tsdb_tmp}"
-        kubectl cp "monitoring/prometheus-prometheus-stack-kube-prom-prometheus-0:/prometheus/prometheus-db/snapshots/${snapshot_name}" \
-            "${tsdb_tmp}" -c prometheus 2>/dev/null && \
-        tar czf "${RESULTS_DIR}/prometheus_tsdb_${stack_name}.tar.gz" -C "${tsdb_tmp}" . && \
-        rm -rf "${tsdb_tmp}" && \
-        log_success "Prometheus TSDB snapshot saved for ${stack_name}"
+    # Prometheus TSDB backup via Alpine sidecar
+    if kubectl exec -n monitoring prometheus-prometheus-stack-kube-prom-prometheus-0 -c sidecar-tools -- tar czf - -C /prometheus-data . > "${RESULTS_DIR}/prometheus_tsdb_${stack_name}.tar.gz" 2>/dev/null; then
+        log_success "Prometheus TSDB backup saved: prometheus_tsdb_${stack_name}.tar.gz"
     else
-        log_warn "Failed to create Prometheus TSDB snapshot for ${stack_name}"
+        log_warn "Failed to backup Prometheus TSDB for ${stack_name}"
     fi
-    # Loki: copy raw data directory
-    local loki_tmp="${RESULTS_DIR}/loki_tmp_${stack_name}"
-    mkdir -p "${loki_tmp}"
-    kubectl cp "monitoring/loki-0:/var/loki" "${loki_tmp}" -c loki 2>/dev/null && \
-        tar czf "${RESULTS_DIR}/loki_data_${stack_name}.tar.gz" -C "${loki_tmp}" . && \
-        rm -rf "${loki_tmp}" && \
-        log_success "Loki raw data saved for ${stack_name}" || \
+
+    # Loki raw data backup via Loki container
+    if kubectl exec -n monitoring loki-0 -c loki -- tar czf - -C /var/loki . > "${RESULTS_DIR}/loki_data_${stack_name}.tar.gz" 2>/dev/null; then
+        log_success "Loki raw data backup saved: loki_data_${stack_name}.tar.gz"
+    else
         log_warn "Failed to backup Loki data for ${stack_name}"
+    fi
 
     save_audit_log "${stack_name}"
 

@@ -48,8 +48,14 @@
           nodePort: 30090
         prometheusSpec:
           enableRemoteWriteReceiver: true
-          enableAdminAPI: true          # Required for TSDB snapshot backup
           retention: 1d # Data retention for one day
+          containers:
+            - name: sidecar-tools
+              image: alpine:3.19
+              command: ["sh", "-c", "sleep infinity"]
+              volumeMounts:
+                - name: prometheus-prometheus-stack-kube-prom-prometheus-db
+                  mountPath: /prometheus-data
           serviceMonitorSelectorNilUsesHelmValues: false
           podMonitorSelectorNilUsesHelmValues: false
           serviceMonitorSelector: {}
