@@ -13,7 +13,7 @@
     create_namespace: true
     kubeconfig: /etc/rancher/k3s/k3s.yaml
     state: "{{ stack_state | default('present') }}"
-    wait: true
+    wait: false
     values:
       # Grafana Configuration:
       grafana:
@@ -60,4 +60,6 @@
           podMonitorSelectorNilUsesHelmValues: false
           serviceMonitorSelector: {}
           podMonitorSelector: {}
+          serviceMonitorNamespaceSelector: {}
+          podMonitorNamespaceSelector: {}
 # tasks file for roles/prometheus_stack

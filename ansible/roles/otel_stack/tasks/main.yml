@@ -123,7 +123,7 @@
       spec:
         selector:
           matchLabels:
-            app.kubernetes.io/name: otel-gateway
+            app.kubernetes.io/name: otel-gateway-collector-monitoring
         endpoints:
-          - port: metrics
+          - port: monitoring
             interval: 15s
