@@ -50,11 +50,9 @@
               - http
               - grpc
           otel_traces_export:
-            endpoint: "http://{{ beyla_traces_endpoint | default('jaeger-ui-nodeport:4318') }}"
+            endpoint: "http://{{ beyla_traces_endpoint | default('jaeger.observability.svc.cluster.local:4318') }}"
             protocol: http/protobuf
-          otel_metrics_export:
-            endpoint: "http://{{ beyla_metrics_endpoint | default('prometheus-stack-kube-prom-prometheus.monitoring.svc.cluster.local:9090/api/v1/write') }}"
-            protocol: http/protobuf
+
       serviceAccount:
         create: true
 
