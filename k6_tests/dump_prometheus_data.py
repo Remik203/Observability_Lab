@@ -69,12 +69,14 @@ METRICS: dict[str, tuple[str, str]] = {
     ),
     "Logs_Ingestion_Rate": (
         f'sum(rate(loki_distributor_bytes_received_total[{RATE_WINDOW}])) '
-        f'or sum(rate(loki_ingester_chunk_stored_bytes_total[{RATE_WINDOW}]))',
+        f'or sum(rate(loki_ingester_chunk_stored_bytes_total[{RATE_WINDOW}])) '
+        f'or vector(0)',
         "Loki — tempo przyjmowania logów [B/s]",
     ),
     "Spans_Ingestion_Rate": (
         f'sum(rate(otelcol_receiver_accepted_spans[{RATE_WINDOW}])) '
-        f'or sum(rate(otelcol_receiver_accepted_spans_total[{RATE_WINDOW}]))',
+        f'or sum(rate(otelcol_receiver_accepted_spans_total[{RATE_WINDOW}])) '
+        f'or vector(0)',
         "OTel Collector — przyjęte span-y [span/s]",
     ),
     "Context_Switches": (
