@@ -260,9 +260,14 @@ process_stack() {
     log_info "Generating plots for ${stack_name}..."
     if (cd "${K6_DIR}" && python3 plot_metrics.py "${stack_name}"); then
         log_success "Plots generated for ${stack_name}"
-    else
         log_warn "Plot generation failed for ${stack_name} (non-critical)"
     fi
+
+    log_info "Backing up Prometheus TSDB & Loki raw data for ${stack_name}..."
+    kubectl exec -n monitoring prometheus-prometheus-stack-kube-prom-prometheus-0 -- tar czf - -C /prometheus prometheus-db > "${RESULTS_DIR}/prometheus_tsdb_${stack_name}.tar.gz" 2>/dev/null || log_warn "Failed to backup Prometheus TSDB for ${stack_name}"
+    kubectl exec -n monitoring loki-0 -c loki -- tar czf - -C /var/loki . > "${RESULTS_DIR}/loki_data_${stack_name}.tar.gz" 2>/dev/null || log_warn "Failed to backup Loki data for ${stack_name}"
+
+
 
     save_audit_log "${stack_name}"
 
