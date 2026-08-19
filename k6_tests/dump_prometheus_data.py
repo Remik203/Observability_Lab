@@ -19,7 +19,7 @@ import pandas as pd
 import requests
 
 # Konfiguracja 
-TARGET_IP = os.getenv("TARGET_IP", "127.0.0.1")
+TARGET_IP = os.getenv("TARGET_IP", "150.254.32.183")
 STEP = "5s"
 RATE_WINDOW = "1m"
 MAX_RETRIES = 3
