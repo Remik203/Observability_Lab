@@ -115,7 +115,6 @@
       spec:
         exporter:
           endpoint: "http://otel-gateway-collector.observability.svc.cluster.local:4318"
-          protocol: http/protobuf
         propagators: [tracecontext, baggage]
         sampler:
           type: parentbased_traceidratio
