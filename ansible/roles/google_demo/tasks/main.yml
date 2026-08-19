@@ -52,7 +52,11 @@
     - { name: 'paymentservice', lang: 'nodejs' }
     # Inject .NET agent
     - { name: 'cartservice', lang: 'dotnet' }
-    # Can't auto-instrument GOLANG apps using SDK. eBPF only auto-instrumentations is available
+    # Can't auto-instrument GOLANG apps using SDK. eBPF auto-instrumentation via OTel Operator.
+    - { name: 'frontend', lang: 'go' }
+    - { name: 'checkoutservice', lang: 'go' }
+    - { name: 'productcatalogservice', lang: 'go' }
+    - { name: 'shippingservice', lang: 'go' }
   changed_when: true
 
 - name: Wait until all pods are ready (can take a few minutes)

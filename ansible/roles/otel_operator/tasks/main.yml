@@ -40,6 +40,9 @@
       admissionWebhooks:
         autoGenerateCert:
           enabled: true # Use self-signed certificate
-
+      manager:
+        autoInstrumentation:
+          go:
+            enabled: true # Enable Go eBPF auto-instrumentation support
 
 # tasks file for roles/otel_operator

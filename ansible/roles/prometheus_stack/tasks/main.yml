@@ -48,6 +48,7 @@
           nodePort: 30090
         prometheusSpec:
           enableRemoteWriteReceiver: true
+          enableAdminAPI: true          # Required for TSDB snapshot backup
           retention: 1d # Data retention for one day
           serviceMonitorSelectorNilUsesHelmValues: false
           podMonitorSelectorNilUsesHelmValues: false
