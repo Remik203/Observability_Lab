@@ -1,16 +1,15 @@
 // k6_tests/utils/config.js
 
-export const RAMP_UP_SECONDS = 120;
-export const FAILURE_DURATION_SECONDS = 180;
+export const WAIT_BEFORE_FAILURE_SECONDS = 240;
+export const FAILURE_DURATION_SECONDS = 120;
 
 export const CONFIG = {
     BASE_URL: `http://${__ENV.TARGET_IP || '127.0.0.1'}:30080`,
     
-    // Define load phases manually as needed
     STANDARD_STAGES: [
-        { duration: '2m', target: 50 },
-        { duration: '10m', target: 50 },
-        { duration: '1m', target: 0 }, 
+        { duration: '1m', target: 50 }, // Wzrost do 50
+        { duration: '8m', target: 50 }, // Utrzymanie 50 (w trakcie tego dzieje się awaria)
+        { duration: '1m', target: 0 },  // Spadek do 0
     ],
 
     STANDARD_THRESHOLDS: {

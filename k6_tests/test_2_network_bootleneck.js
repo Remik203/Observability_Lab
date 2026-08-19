@@ -2,30 +2,29 @@ import http from 'k6/http';
 import { sleep, check } from 'k6';
 import faker from 'k6/x/faker';
 import { ServiceDisruptor } from 'k6/x/disruptor';
-import { CONFIG, RAMP_UP_SECONDS, FAILURE_DURATION_SECONDS } from './utils/config.js';
+// ZMIANA: Import nowych zmiennych
+import { CONFIG, WAIT_BEFORE_FAILURE_SECONDS, FAILURE_DURATION_SECONDS } from './utils/config.js';
 
-// Override the default options to use scenarios
 export const options = {
     scenarios: {
-        // Scenario 1: Standard load generation
         base_load: {
             executor: 'ramping-vus',
             stages: CONFIG.STANDARD_STAGES,
-            exec: 'userTraffic', // Points to the userTraffic function below
+            exec: 'userTraffic',
         },
-        // Scenario 2: Chaos injection
         network_disruption: {
             executor: 'shared-iterations',
             iterations: 1,
             vus: 1,
             exec: 'injectFault',
-            startTime: `${RAMP_UP_SECONDS}s`,   // Start after the defined ramp-up phase
+            startTime: `${WAIT_BEFORE_FAILURE_SECONDS}s`,
         },
     },
     thresholds: {
         http_req_duration: ['p(95)<500'],
     }
 };
+
 
 // ====================================================================
 // SCENARIO 1: USER TRAFFIC GENERATOR
