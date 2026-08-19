@@ -21,7 +21,7 @@ import requests
 # Konfiguracja 
 TARGET_IP = os.getenv("TARGET_IP", "127.0.0.1")
 STEP = "5s"
-RATE_WINDOW = "15s"
+RATE_WINDOW = "1m"
 MAX_RETRIES = 3
 RETRY_DELAY = 5
 
