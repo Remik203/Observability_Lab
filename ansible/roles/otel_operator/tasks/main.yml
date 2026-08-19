@@ -22,6 +22,10 @@
     values:
       installCRDs: true
       
+- name: Pause 15s to let cert-manager webhooks initialize
+  ansible.builtin.pause:
+    seconds: 15
+
 - name: Install OpeneTelemetry Operator
   kubernetes.core.helm:
     name: opentelemetry-operator
@@ -30,6 +34,7 @@
     create_namespace: true
     state: "{{ stack_state | default('present') }}"
     wait: true
+    timeout: 10m
     kubeconfig: /etc/rancher/k3s/k3s.yaml
     values:
       admissionWebhooks:
