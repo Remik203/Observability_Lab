@@ -35,5 +35,8 @@
       admissionWebhooks:
         autoGenerateCert:
           enabled: true # Use self-signed certificate
+      manager:
+        extraArgs:
+          - "--feature-gates=enable-go-instrumentation"
 
 # tasks file for roles/otel_operator
