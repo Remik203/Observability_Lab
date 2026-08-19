@@ -16,7 +16,9 @@
 #   4. k6 is installed on the load generator node
 # =============================================================================
 
-# Configuration
+# Ensure PATH includes pipx / local user binaries
+export PATH="$HOME/.local/bin:$PATH"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ANSIBLE_DIR="${SCRIPT_DIR}/ansible"
 K6_DIR="${SCRIPT_DIR}/k6_tests"
