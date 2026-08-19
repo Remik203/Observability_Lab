@@ -114,7 +114,7 @@
         namespace: default
       spec:
         exporter:
-          endpoint: "http://otel-gateway-collector:4318"
+          endpoint: "http://otel-gateway-collector.observability.svc.cluster.local:4318"
         propagators: [tracecontext, baggage]
         sampler:
           type: parentbased_traceidratio

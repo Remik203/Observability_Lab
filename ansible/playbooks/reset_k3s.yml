@@ -26,6 +26,9 @@
 
     - name: Flush All Networking Rules
       ansible.builtin.shell: |
+        iptables -P INPUT ACCEPT || true
+        iptables -P FORWARD ACCEPT || true
+        iptables -P OUTPUT ACCEPT || true
         iptables -F || true
         iptables -t nat -F || true
         iptables -t mangle -F || true
