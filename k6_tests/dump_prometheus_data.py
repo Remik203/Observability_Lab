@@ -68,11 +68,13 @@ METRICS: dict[str, tuple[str, str]] = {
         "Ruch sieciowy wychodzący per pod [B/s]",
     ),
     "Logs_Ingestion_Rate": (
-        f'sum(rate(loki_distributor_bytes_received_total[{RATE_WINDOW}]))',
+        f'sum(rate(loki_distributor_bytes_received_total[{RATE_WINDOW}])) '
+        f'or sum(rate(loki_ingester_chunk_stored_bytes_total[{RATE_WINDOW}]))',
         "Loki — tempo przyjmowania logów [B/s]",
     ),
     "Spans_Ingestion_Rate": (
-        f'sum(rate(otelcol_receiver_accepted_spans[{RATE_WINDOW}]))',
+        f'sum(rate(otelcol_receiver_accepted_spans[{RATE_WINDOW}])) '
+        f'or sum(rate(otelcol_receiver_accepted_spans_total[{RATE_WINDOW}]))',
         "OTel Collector — przyjęte span-y [span/s]",
     ),
     "Context_Switches": (
@@ -80,12 +82,14 @@ METRICS: dict[str, tuple[str, str]] = {
         "Przełączenia kontekstu jądra [1/s] — narzut eBPF vs sidecar",
     ),
     "HTTP_Errors_Istio": (
-        f'sum(rate(istio_requests_total{{response_code=~"4..|5.."}}[{RATE_WINDOW}]))',
+        f'sum(rate(istio_requests_total{{response_code=~"4..|5.."}}[{RATE_WINDOW}])) '
+        f'or (sum(rate(istio_requests_total[{RATE_WINDOW}])) * 0)',
         "Istio — tempo żądań 4xx/5xx [req/s]",
     ),
     "HTTP_Errors_Beyla": (
         f'sum(rate(http_server_request_duration_seconds_count'
-        f'  {{http_response_status_code=~"4..|5.."}}[{RATE_WINDOW}]))',
+        f'{{http_response_status_code=~"4..|5.."}}[{RATE_WINDOW}])) '
+        f'or (sum(rate(http_server_request_duration_seconds_count[{RATE_WINDOW}])) * 0)',
         "Beyla eBPF — tempo żądań 4xx/5xx [req/s]",
     ),
 }
@@ -315,7 +319,7 @@ def main() -> None:
                         "stack_name": args.stack_name,
                         "test_name": test_id,
                         "iteration": iteration,
-                        "time_relative": round(pt["time"] - t0, 1),
+                        "time_relative": round(pt["time"] - start_ts, 1),
                         "metric_name": final_metric,
                         "value": pt["value"],
                     })

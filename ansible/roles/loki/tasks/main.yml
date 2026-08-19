@@ -14,7 +14,7 @@
     release_namespace: monitoring
     create_namespace: true
     state: "{{ stack_state | default('present') }}"
-    wait: true
+    wait: false
     timeout: 10m
     values:
       deploymentMode: SingleBinary
@@ -81,6 +81,11 @@
       # Wyłączamy testy Helm – przyśpieszają wdrożenie
       test:
         enabled: false
+
+      serviceMonitor:
+        enabled: true
+        labels:
+          release: prometheus-stack
 
   register: helm_loki
   until: helm_loki is not failed

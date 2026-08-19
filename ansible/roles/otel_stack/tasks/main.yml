@@ -41,6 +41,15 @@
           name: otel-collector-role
           apiGroup: rbac.authorization.k8s.io
 
+- name: Wait for OpenTelemetry Operator webhook endpoint to be ready
+  ansible.builtin.command:
+    cmd: kubectl get endpoints opentelemetry-operator-webhook -n opentelemetry-operator-system -o jsonpath='{.subsets[*].addresses[*].ip}'
+  register: webhook_endpoints
+  until: webhook_endpoints.stdout != ""
+  retries: 20
+  delay: 3
+  changed_when: false
+
 - name: Deploy OTel Collector
   kubernetes.core.k8s:
     kubeconfig: /etc/rancher/k3s/k3s.yaml
@@ -98,24 +107,23 @@
                 processors: [memory_limiter, k8sattributes, batch]
                 exporters: [prometheusremotewrite]
               traces:
-                receivers: [otlp]
-                processors: [memory_limiter, k8sattributes, batch]
-                exporters: [otlp/jaeger]
 
-- name: Configure Auto-instrumentation
+- name: ServiceMonitor for OTel Collector
   kubernetes.core.k8s:
     kubeconfig: /etc/rancher/k3s/k3s.yaml
     state: "{{ stack_state | default('present') }}"
     definition:
-      apiVersion: opentelemetry.io/v1alpha1
-      kind: Instrumentation
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
       metadata:
-        name: my-instrumentation
-        namespace: default
+        name: otel-collector-monitor
+        namespace: observability
+        labels:
+          release: prometheus-stack
       spec:
-        exporter:
-          endpoint: "http://otel-gateway-collector.observability.svc.cluster.local:4318"
-        propagators: [tracecontext, baggage]
-        sampler:
-          type: parentbased_traceidratio
-          argument: "1"
+        selector:
+          matchLabels:
+            app.kubernetes.io/name: otel-gateway
+        endpoints:
+          - port: metrics
+            interval: 15s
