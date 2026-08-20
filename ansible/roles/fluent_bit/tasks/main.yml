@@ -112,6 +112,8 @@
         enabled: true
         namespace: monitoring
         interval: 30s
+        labels:
+          release: prometheus-stack
   register: helm_fluent_bit
   until: helm_fluent_bit is not failed
   retries: 5

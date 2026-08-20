@@ -62,3 +62,26 @@
         name: default
         labels:
           istio-injection: enabled
+
+- name: Create ServiceMonitor for Istiod control plane
+  kubernetes.core.k8s:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    state: present
+    definition:
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: istiod-monitor
+        namespace: monitoring
+        labels:
+          release: prometheus-stack
+      spec:
+        namespaceSelector:
+          matchNames:
+            - istio-system
+        selector:
+          matchLabels:
+            app: istiod
+        endpoints:
+          - port: http-monitoring
+            interval: 15s
