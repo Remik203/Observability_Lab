@@ -304,12 +304,40 @@ def main() -> None:
             ax.set_title(pretty_title(bm), fontsize=13)
             ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
 
+            # Symlog osi Y dla metryk z kolosalnymi roznicami skali (np. Spans Ingestion)
+            if bm in ("Spans_Ingestion_Rate", "Logs_Ingestion_Rate"):
+                ax.set_yscale("symlog", linthresh=1.0)
+                ax.set_ylabel(f"P95 {ylab} (Log Scale)")
+
             # Etykiety osi X
             ax.set_xticks(range(len(stacks)))
             ax.set_xticklabels(
                 [PALETTE.get(s, (None, s))[1] for s in stacks],
                 rotation=30, ha="right", fontsize=10,
             )
+
+            # Wypisywanie dokladnych wartosci nad slupkami
+            for s_idx, s in enumerate(stacks):
+                val = bottoms[s_idx]
+                if val > 0:
+                    if val >= 1_000_000:
+                        txt = f"{val/1e6:.2f}M"
+                    elif val >= 10_000:
+                        txt = f"{val/1e3:.1f}k"
+                    elif val >= 10.0:
+                        txt = f"{val:.1f}"
+                    elif val >= 0.001:
+                        txt = f"{val:.3f}"
+                    else:
+                        txt = f"{val:.4f}"
+                    ax.annotate(
+                        txt,
+                        xy=(s_idx, val),
+                        xytext=(0, 3),
+                        textcoords="offset points",
+                        ha="center", va="bottom",
+                        fontsize=8, fontweight="bold"
+                    )
 
         # Ukryj puste panele
         for idx in range(len(bms), nrows * ncols):
