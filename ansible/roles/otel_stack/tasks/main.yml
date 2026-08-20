@@ -107,6 +107,9 @@
                 processors: [memory_limiter, k8sattributes, batch]
                 exporters: [prometheusremotewrite]
               traces:
+                receivers: [otlp]
+                processors: [memory_limiter, k8sattributes, batch]
+                exporters: [otlp/jaeger]
 
 - name: ServiceMonitor for OTel Collector
   kubernetes.core.k8s:

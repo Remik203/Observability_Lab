@@ -85,3 +85,27 @@
         endpoints:
           - port: http-monitoring
             interval: 15s
+
+- name: Create PodMonitor for Envoy sidecars
+  kubernetes.core.k8s:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    state: present
+    definition:
+      apiVersion: monitoring.coreos.com/v1
+      kind: PodMonitor
+      metadata:
+        name: envoy-stats-monitor
+        namespace: monitoring
+        labels:
+          release: prometheus-stack
+      spec:
+        selector:
+          matchExpressions:
+            - key: istio-prometheus-ignore
+              operator: DoesNotExist
+        namespaceSelector:
+          any: true
+        podMetricsEndpoints:
+          - path: /stats/prometheus
+            port: http-envoy-prom
+            interval: 15s
