@@ -2,10 +2,6 @@
 ---
 # defaults file for roles/grafana_beyla
 
-# Wersja chart – blokuje wersję dla odtwarzalności eksperymentów
-# Sprawdź aktualną wersję: helm search repo grafana/beyla
-beyla_chart_version: "1.5.0"
-
 # Endpoint eksportu trace'ów (Jaeger OTLP HTTP)
 beyla_traces_endpoint: "jaeger.observability.svc.cluster.local:4318"
 

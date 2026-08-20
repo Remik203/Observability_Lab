@@ -13,6 +13,9 @@
     name: observability
     state: "{{ stack_state | default('present') }}"
 
+- name: Update Helm repo
+  ansible.builtin.command: helm repo update
+
 - name: Install Grafana Beyla (eBPF auto-instrumentation)
   kubernetes.core.helm:
     name: beyla
@@ -20,7 +23,6 @@
     release_namespace: observability
     create_namespace: false
     kubeconfig: /etc/rancher/k3s/k3s.yaml
-    chart_version: "{{ beyla_chart_version | default('1.9.0') }}"
     state: "{{ stack_state | default('present') }}"
     wait: false
     values:
@@ -30,15 +32,25 @@
         privileged: true
         readOnlyRootFilesystem: false
         runAsUser: 0
+      extraVolumes:
+        - name: bpf-fs
+          hostPath:
+            path: /sys/fs/bpf
+      extraVolumeMounts:
+        - name: bpf-fs
+          mountPath: /sys/fs/bpf
+          mountPropagation: HostToContainer
       config:
         data:
           discovery:
             services:
               - k8s_namespace: default
+                namespace: default
+          log_level: DEBUG
           attributes:
             kubernetes:
               enable: true
-          prometheus:
+          prometheus_export:
             port: 9090
             path: /metrics
             features:
@@ -57,11 +69,11 @@
 
       resources:
         requests:
-          cpu: "50m"
-          memory: "64Mi"
+          cpu: "100m"
+          memory: "128Mi"
         limits:
           cpu: "500m"
-          memory: "256Mi"
+          memory: "1Gi"
 
       tolerations:
         - key: node-role.kubernetes.io/control-plane
@@ -76,13 +88,33 @@
         port: 9090
 
       serviceMonitor:
-        enabled: true
-        namespace: monitoring
-        interval: 30s
-        labels:
-          release: prometheus-stack
+        enabled: false
 
   register: helm_beyla
   until: helm_beyla is not failed
   retries: 5
   delay: 10
+
+- name: Create dedicated ServiceMonitor for Beyla in monitoring namespace
+  kubernetes.core.k8s:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    state: present
+    definition:
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: beyla-monitor
+        namespace: monitoring
+        labels:
+          release: prometheus-stack
+      spec:
+        namespaceSelector:
+          matchNames:
+            - observability
+        selector:
+          matchLabels:
+            app.kubernetes.io/name: beyla
+        endpoints:
+          - targetPort: 9090
+            path: /metrics
+            interval: 15s

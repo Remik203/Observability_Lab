@@ -30,9 +30,9 @@ INVENTORY="${ANSIBLE_DIR}/inventory.ini"
 PRIMARY_IP="$TARGET_IP"
 PRIMARY_USER="student"
 
-ITERATIONS=2                    # Number of k6 test iterations per stack
-POD_WAIT_TIMEOUT=600              # Max seconds to wait for pods to be ready
-DEPLOY_SETTLE_TIME=180            # Seconds to wait after deploy for metrics to stabilize
+ITERATIONS=1                   # Number of k6 test iterations per stack
+POD_WAIT_TIMEOUT=300              # Max seconds to wait for pods to be ready
+DEPLOY_SETTLE_TIME=300            # Seconds to wait after deploy for metrics to stabilize
 
 # Stacks to test
 if [ $# -gt 0 ]; then
@@ -106,8 +106,11 @@ reset_cluster() {
     log_success "New certificates installed."
     
     # 4. Wait for API to stabilize
-    log_info "Waiting 30s for the fresh K3s API to stabilize..."
-    sleep 300
+    log_info "Waiting for K3s API to become responsive..."
+    until kubectl get nodes >/dev/null 2>&1; do
+        sleep 2
+    done
+    sleep 10
 }
 
 wait_for_pods() {
