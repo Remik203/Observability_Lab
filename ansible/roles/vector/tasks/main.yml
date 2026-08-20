@@ -114,4 +114,47 @@
   retries: 5
   delay: 10
 
-# tasks file for roles/vector
+- name: Create Service for Vector metrics in logging namespace
+  kubernetes.core.k8s:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    state: "{{ stack_state | default('present') }}"
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: vector-metrics
+        namespace: logging
+        labels:
+          app.kubernetes.io/name: vector
+      spec:
+        ports:
+          - name: metrics
+            port: 9090
+            targetPort: 9090
+            protocol: TCP
+        selector:
+          app.kubernetes.io/name: vector
+
+- name: Create ServiceMonitor for Vector in monitoring namespace
+  kubernetes.core.k8s:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    state: "{{ stack_state | default('present') }}"
+    definition:
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: vector-monitor
+        namespace: monitoring
+        labels:
+          release: prometheus-stack
+      spec:
+        namespaceSelector:
+          matchNames:
+            - logging
+        selector:
+          matchLabels:
+            app.kubernetes.io/name: vector
+        endpoints:
+          - port: metrics
+            path: /metrics
+            interval: 15s
