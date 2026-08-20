@@ -116,3 +116,27 @@
               isDefault: false
               jsonData:
                 maxLines: 1000
+
+- name: Create dedicated ServiceMonitor for Loki in monitoring namespace
+  kubernetes.core.k8s:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    state: present
+    definition:
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: loki-servicemonitor
+        namespace: monitoring
+        labels:
+          release: prometheus-stack
+      spec:
+        namespaceSelector:
+          matchNames:
+            - monitoring
+        selector:
+          matchLabels:
+            app.kubernetes.io/name: loki
+        endpoints:
+          - port: http-metrics
+            path: /metrics
+            interval: 15s
