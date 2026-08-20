@@ -95,6 +95,28 @@
   retries: 5
   delay: 10
 
+- name: Create headless service for Beyla metrics in observability namespace
+  kubernetes.core.k8s:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: beyla
+        namespace: observability
+        labels:
+          app.kubernetes.io/name: beyla
+      spec:
+        clusterIP: None
+        selector:
+          app.kubernetes.io/name: beyla
+        ports:
+          - name: metrics
+            port: 9090
+            targetPort: 9090
+            protocol: TCP
+
 - name: Create dedicated ServiceMonitor for Beyla in monitoring namespace
   kubernetes.core.k8s:
     kubeconfig: /etc/rancher/k3s/k3s.yaml
@@ -115,6 +137,21 @@
           matchLabels:
             app.kubernetes.io/name: beyla
         endpoints:
-          - targetPort: 9090
+          - port: metrics
             path: /metrics
             interval: 15s
+
+- name: Ensure hostPID is enabled on Beyla DaemonSet
+  kubernetes.core.k8s:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    state: present
+    definition:
+      apiVersion: apps/v1
+      kind: DaemonSet
+      metadata:
+        name: beyla
+        namespace: observability
+      spec:
+        template:
+          spec:
+            hostPID: true
