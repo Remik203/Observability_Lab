@@ -70,25 +70,32 @@ METRICS: dict[str, tuple[str, str]] = {
     "Logs_Ingestion_Rate": (
         f'sum(rate(loki_distributor_bytes_received_total[{RATE_WINDOW}])) '
         f'or sum(rate(loki_ingester_chunk_stored_bytes_total[{RATE_WINDOW}])) '
+        f'or sum(rate(vector_component_received_events_total{{component_id="kubernetes_logs"}}[{RATE_WINDOW}])) '
         f'or vector(0)',
-        "Loki — tempo przyjmowania logów [B/s]",
+        "Logi — tempo przyjmowania [event/s lub B/s]",
     ),
     "Spans_Ingestion_Rate": (
         f'sum(rate(otelcol_receiver_accepted_spans[{RATE_WINDOW}])) '
         f'or sum(rate(otelcol_receiver_accepted_spans_total[{RATE_WINDOW}])) '
         f'or sum(rate(jaeger_collector_spans_received_total[{RATE_WINDOW}])) '
+        f'or sum(rate(beyla_network_flow_bytes_total{{k8s_dst_owner_type=~"Deployment|Service"}}[{RATE_WINDOW}])) '
         f'or sum(rate(http_server_request_duration_seconds_count[{RATE_WINDOW}])) '
         f'or vector(0)',
-        "OTel / Jaeger / Beyla — przyjęte spany [span/s]",
+        "Ślady — przepustowość / spany [items/s]",
     ),
     "Context_Switches": (
         f'sum(rate(node_context_switches_total[{RATE_WINDOW}]))',
         "Przełączenia kontekstu jądra [1/s] — narzut eBPF vs sidecar",
     ),
-    "HTTP_Errors_Istio": (
+    "Http_Errors_Istio": (
         f'sum(rate(istio_requests_total{{response_code=~"4..|5.."}}[{RATE_WINDOW}])) '
-        f'or (sum(rate(istio_requests_total[{RATE_WINDOW}])) * 0)',
-        "Istio — tempo żądań 4xx/5xx [req/s]",
+        f'or sum(rate(envoy_cluster_upstream_rq_5xx[{RATE_WINDOW}])) '
+        f'or sum(rate(envoy_cluster_upstream_rq_timeout[{RATE_WINDOW}])) '
+        f'or sum(rate(envoy_http_downstream_rq_toobig[{RATE_WINDOW}])) '
+        f'or sum(rate(envoy_http_downstream_rq_rx_reset[{RATE_WINDOW}])) '
+        f'or (sum(rate(istio_requests_total[{RATE_WINDOW}])) * 0) '
+        f'or vector(0)',
+        "Envoy / Istio — wskaźnik błędów sidecara [błędów/s]",
     ),
     "HTTP_Errors_Beyla": (
         f'sum(rate(http_server_request_duration_seconds_count'

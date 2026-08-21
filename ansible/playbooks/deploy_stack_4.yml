@@ -11,5 +11,6 @@
     - loki
     - vector
     - jaeger_v2
-    - grafana_beyla
     - google_demo
+    - grafana_beyla
+

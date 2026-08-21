@@ -30,9 +30,9 @@ INVENTORY="${ANSIBLE_DIR}/inventory.ini"
 PRIMARY_IP="$TARGET_IP"
 PRIMARY_USER="student"
 
-ITERATIONS=1                   # Number of k6 test iterations per stack
+ITERATIONS=3                   # Number of k6 test iterations per stack
 POD_WAIT_TIMEOUT=300              # Max seconds to wait for pods to be ready
-DEPLOY_SETTLE_TIME=300            # Seconds to wait after deploy for metrics to stabilize
+DEPLOY_SETTLE_TIME=120            # Seconds to wait after deploy for metrics to stabilize
 
 # Stacks to test
 if [ $# -gt 0 ]; then
@@ -243,8 +243,29 @@ process_stack() {
     
     wait_for_pods "${stack_name}"
 
+    if [[ "${stack_name}" == "stack_4" ]]; then
+        log_info "Generating warm-up traffic for Beyla eBPF auto-discovery..."
+        (cd "${K6_DIR}" && k6 run --vus 2 --duration 20s ./test_0_baseline_load.js >/dev/null 2>&1 || true)
+
+        log_info "Checking if Beyla target is UP in Prometheus for ${stack_name}..."
+        local retries=0
+        local max_retries=18
+        until curl -s "http://${PRIMARY_IP}:30090/api/v1/targets" | grep -q '"job":"beyla"'; do
+            if [ $retries -ge $max_retries ]; then
+                log_warn "Timeout waiting for Beyla target in Prometheus! Proceeding..."
+                break
+            fi
+            log_info "  Waiting for Beyla target in Prometheus (${retries}/${max_retries})..."
+            sleep 5
+            ((retries++))
+        done
+    fi
+
     log_info "Settling time: waiting ${DEPLOY_SETTLE_TIME}s for metrics to stabilize..."
-    sleep ${DEPLOY_SETTLE_TIME}
+    (cd "${K6_DIR}" && k6 run --vus 2 --duration 30s test_0_baseline_load.js >/dev/null 2>&1 || true)
+    log_info "Waiting 60s for metrics pipeline to settle..."
+    sleep 60
+
 
     log_info "Starting k6 test suite for ${stack_name} (${ITERATIONS} iterations)..."
     if (cd "${K6_DIR}" && bash ./run_all_tests.sh "${stack_name}" "${ITERATIONS}"); then
