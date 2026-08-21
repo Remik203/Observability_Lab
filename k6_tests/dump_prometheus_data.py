@@ -76,8 +76,10 @@ METRICS: dict[str, tuple[str, str]] = {
     "Spans_Ingestion_Rate": (
         f'sum(rate(otelcol_receiver_accepted_spans[{RATE_WINDOW}])) '
         f'or sum(rate(otelcol_receiver_accepted_spans_total[{RATE_WINDOW}])) '
+        f'or sum(rate(jaeger_collector_spans_received_total[{RATE_WINDOW}])) '
+        f'or sum(rate(http_server_request_duration_seconds_count[{RATE_WINDOW}])) '
         f'or vector(0)',
-        "OTel Collector — przyjęte span-y [span/s]",
+        "OTel / Jaeger / Beyla — przyjęte spany [span/s]",
     ),
     "Context_Switches": (
         f'sum(rate(node_context_switches_total[{RATE_WINDOW}]))',

@@ -63,6 +63,9 @@
           otel_traces_export:
             endpoint: "http://{{ beyla_traces_endpoint | default('jaeger.observability.svc.cluster.local:4318/v1/traces') }}"
             protocol: http/protobuf
+            sampler:
+              name: probabilistic
+              arg: "0.05"
 
       serviceAccount:
         create: true
