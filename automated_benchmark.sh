@@ -250,7 +250,7 @@ process_stack() {
         log_info "Checking if Beyla target is UP in Prometheus for ${stack_name}..."
         local retries=0
         local max_retries=18
-        until curl -s "http://${PRIMARY_IP}:30090/api/v1/targets" | grep -q '"job":"beyla"'; do
+        until curl -s "http://${PRIMARY_IP}:30090/api/v1/targets" | grep -E -q 'beyla-monitor|beyla'; do
             if [ $retries -ge $max_retries ]; then
                 log_warn "Timeout waiting for Beyla target in Prometheus! Proceeding..."
                 break
