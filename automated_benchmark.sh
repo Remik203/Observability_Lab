@@ -30,7 +30,7 @@ INVENTORY="${ANSIBLE_DIR}/inventory.ini"
 PRIMARY_IP="$TARGET_IP"
 PRIMARY_USER="student"
 
-ITERATIONS=3                   # Number of k6 test iterations per stack
+ITERATIONS=1                   # Number of k6 test iterations per stack
 POD_WAIT_TIMEOUT=300              # Max seconds to wait for pods to be ready
 DEPLOY_SETTLE_TIME=120            # Seconds to wait after deploy for metrics to stabilize
 

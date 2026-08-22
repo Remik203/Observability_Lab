@@ -78,8 +78,9 @@ METRICS: dict[str, tuple[str, str]] = {
         f'sum(rate(otelcol_receiver_accepted_spans[{RATE_WINDOW}])) '
         f'or sum(rate(otelcol_receiver_accepted_spans_total[{RATE_WINDOW}])) '
         f'or sum(rate(jaeger_collector_spans_received_total[{RATE_WINDOW}])) '
+        f'or ( (sum(rate(http_server_request_duration_seconds_count[{RATE_WINDOW}])) or vector(0)) + (sum(rate(rpc_server_call_duration_seconds_count[{RATE_WINDOW}])) or vector(0)) ) '
         f'or vector(0)',
-        "Ślady — przyjmowane spany [span/s]",
+        "Ślady / Żądania śledzone — tempo [elementów/s]",
     ),
     "Context_Switches": (
         f'sum(rate(node_context_switches_total[{RATE_WINDOW}]))',

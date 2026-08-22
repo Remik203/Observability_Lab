@@ -43,20 +43,21 @@
       config:
         data:
           discovery:
+            disabled_route_harvesters:
+              - java
             services:
               - k8s_namespace: default
                 namespace: default
-          log_level: DEBUG
           attributes:
             kubernetes:
               enable: true
+          ebpf:
+            wakeup_len: 100
           prometheus_export:
             port: 9090
             path: /metrics
             features:
               - application
-              - application_process
-              - network
             instrumentations:
               - http
               - grpc
@@ -70,12 +71,15 @@
       serviceAccount:
         create: true
 
+      env:
+        BEYLA_JAVAAGENT_ENABLED: "false"
+
       resources:
         requests:
           cpu: "100m"
           memory: "128Mi"
         limits:
-          cpu: "500m"
+          cpu: "1"
           memory: "1Gi"
 
       tolerations:
@@ -91,73 +95,14 @@
         port: 9090
 
       serviceMonitor:
-        enabled: false
+        enabled: true
+        labels:
+          release: prometheus-stack # Ważne: etykieta używana przez Prometheus Operatora
 
   register: helm_beyla
   until: helm_beyla is not failed
   retries: 5
   delay: 10
-
-- name: Create headless service for Beyla metrics in observability namespace
-  kubernetes.core.k8s:
-    kubeconfig: /etc/rancher/k3s/k3s.yaml
-    state: present
-    definition:
-      apiVersion: v1
-      kind: Service
-      metadata:
-        name: beyla
-        namespace: observability
-        labels:
-          app.kubernetes.io/name: beyla
-      spec:
-        clusterIP: None
-        selector:
-          app.kubernetes.io/name: beyla
-        ports:
-          - name: metrics
-            port: 9090
-            targetPort: 9090
-            protocol: TCP
-
-- name: Create dedicated ServiceMonitor for Beyla in monitoring namespace
-  kubernetes.core.k8s:
-    kubeconfig: /etc/rancher/k3s/k3s.yaml
-    state: present
-    definition:
-      apiVersion: monitoring.coreos.com/v1
-      kind: ServiceMonitor
-      metadata:
-        name: beyla-monitor
-        namespace: monitoring
-        labels:
-          release: prometheus-stack
-      spec:
-        namespaceSelector:
-          matchNames:
-            - observability
-        selector:
-          matchLabels:
-            app.kubernetes.io/name: beyla
-        endpoints:
-          - port: metrics
-            path: /metrics
-            interval: 15s
-
-- name: Ensure hostPID is enabled on Beyla DaemonSet
-  kubernetes.core.k8s:
-    kubeconfig: /etc/rancher/k3s/k3s.yaml
-    state: present
-    definition:
-      apiVersion: apps/v1
-      kind: DaemonSet
-      metadata:
-        name: beyla
-        namespace: observability
-      spec:
-        template:
-          spec:
-            hostPID: true
 
 - name: Wait for Beyla DaemonSet rollout to complete
   kubernetes.core.k8s_info:
@@ -166,6 +111,9 @@
     name: beyla
     namespace: observability
   register: beyla_ds
-  until: beyla_ds.resources[0].status.numberReady | default(0) > 0
+  until:
+    - beyla_ds.resources[0].status.numberReady | default(0) > 0
+    - beyla_ds.resources[0].status.numberReady == beyla_ds.resources[0].status.desiredNumberScheduled
+    - beyla_ds.resources[0].status.numberUnavailable | default(0) == 0
   retries: 20
   delay: 5

@@ -22,7 +22,7 @@
   ansible.builtin.command:
     cmd: >
       kubectl patch deployment {{ item }} -p
-      '{"spec": {"template": {"spec": {"containers": [{"name": "server", "resources": {"limits": {"memory": "1Gi"}, "requests": {"memory": "64Mi"}}, "readinessProbe": {"initialDelaySeconds": 45}, "livenessProbe": {"initialDelaySeconds": 45}}]}}}}'
+      '{"spec": {"template": {"spec": {"containers": [{"name": "server", "resources": {"limits": {"memory": "1Gi"}, "requests": {"memory": "64Mi"}}, "readinessProbe": {"initialDelaySeconds": 60, "timeoutSeconds": 5, "failureThreshold": 10}, "livenessProbe": {"initialDelaySeconds": 60, "timeoutSeconds": 5, "failureThreshold": 10}}]}}}}'
   loop:
     - adservice
     - cartservice
@@ -54,17 +54,8 @@
     - { name: 'cartservice', lang: 'dotnet' }
   changed_when: true
 
-- name: Patch Go deployments with OpenTelemetry eBPF auto-instrumentation annotations and target binary path
-  ansible.builtin.command:
-    cmd: >
-      kubectl patch deployment {{ item.name }} -p
-      '{"spec": {"template": {"metadata": {"annotations": {"instrumentation.opentelemetry.io/inject-go": "true", "instrumentation.opentelemetry.io/otel-go-auto-target-exe": "{{ item.exe }}"}}}}}'
-  loop:
-    - { name: 'frontend', exe: '/src/server' }
-    - { name: 'checkoutservice', exe: '/src/checkoutservice' }
-    - { name: 'productcatalogservice', exe: '/src/productcatalogservice' }
-    - { name: 'shippingservice', exe: '/src/shippingservice' }
-  changed_when: true
+# Note: Go eBPF auto-instrumentation in OTel Operator (inject-go) is experimental and crashes on stripped Go binaries.
+# Go eBPF auto-instrumentation is handled natively by Grafana Beyla in Stack 4.
 
 - name: Wait until all pods are ready (can take a few minutes)
   ansible.builtin.command:
