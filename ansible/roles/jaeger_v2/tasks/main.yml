@@ -49,3 +49,48 @@
             port: 16686
             targetPort: 16686
             nodePort: 30086
+
+- name: Create Service for Jaeger metrics in observability namespace
+  kubernetes.core.k8s:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: jaeger-metrics
+        namespace: observability
+        labels:
+          app.kubernetes.io/name: jaeger
+      spec:
+        ports:
+          - name: admin
+            port: 14269
+            targetPort: 14269
+            protocol: TCP
+        selector:
+          app.kubernetes.io/name: jaeger
+
+- name: Create ServiceMonitor for Jaeger in monitoring namespace
+  kubernetes.core.k8s:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    state: present
+    definition:
+      apiVersion: monitoring.coreos.com/v1
+      kind: ServiceMonitor
+      metadata:
+        name: jaeger-monitor
+        namespace: monitoring
+        labels:
+          release: prometheus-stack
+      spec:
+        namespaceSelector:
+          matchNames:
+            - observability
+        selector:
+          matchLabels:
+            app.kubernetes.io/name: jaeger
+        endpoints:
+          - port: admin
+            path: /metrics
+            interval: 15s
